@@ -721,3 +721,143 @@ window.GZX_B09_transfer = async function(fromUid, toUid, amount) {
 };
 
 console.log('[duzeltmeler.js] ✅ 13 fix + yeni özellik aktif');
+
+/* ══════════════════════════════════════════════════════════════════
+   FIX 14 — Kimlik Kartı Sistemi TAM DÜZELTME
+   Sorunlar:
+   1) GZX_M01_issueIDCard dinamik-sistem.js'de admin kuyruğuna gönderiyor
+      ama onay mekanizması çalışmıyor → kimlik verilemiyor
+   2) Muhtarlık bakiye alanı "d.bakiye" ama para "users/{uid}/money"
+   3) GZX_M02_checkTradeEligibility mesajında eski fee (500) yazıyor
+   4) canTrade field set edilmeden ticaret engelleniyor
+   ══════════════════════════════════════════════════════════════════ */
+(function fixKimlikSistemi() {
+  // GZ hazır olana kadar bekle
+  const _w = setInterval(async function() {
+    if (!window.dbGet || !window.dbUpdate || !window.spendCash) return;
+    clearInterval(_w);
+
+    /* ── FIX: GZX_M01_issueIDCard — Direkt ver, admin kuyruğu yok ── */
+    window.GZX_M01_issueIDCard = async function(uid) {
+      if (!uid) uid = window.GZ?.uid;
+      if (!uid) return window.toast?.('⛔ Oturum bulunamadı', 'error');
+
+      // Zaten var mı?
+      const has = await window.dbGet(`users/${uid}/kimlikKarti`);
+      if (has) return window.toast?.('🪪 Kimlik kartınız zaten var', 'warn');
+
+      // Firebase'den güncel ücreti al
+      const fee = (await window.dbGet('system/idCardFee')) || 10000;
+
+      // Bakiyeyi kontrol et (money alanı)
+      const userData = await window.dbGet(`users/${uid}`) || {};
+      const balance = userData.money || 0;
+
+      if (balance < fee) {
+        window.toast?.(`💸 Yetersiz bakiye! Gereken: ${cashFmt(fee)} — Mevcut: ${cashFmt(balance)}`, 'error', 6000);
+        return;
+      }
+
+      // Ücreti çek
+      const ok = await spendCash(uid, fee, 'kimlik-karti');
+      if (!ok) {
+        window.toast?.(`💸 Ödeme başarısız! Gereken: ${cashFmt(fee)}`, 'error');
+        return;
+      }
+
+      // Kimlik numarası oluştur
+      const tcNo = 'GZ' + String(Date.now()).slice(-9);
+      const seriNo = 'SRK-' + Date.now().toString(36).toUpperCase();
+
+      // Firebase'e yaz
+      await window.dbUpdate(`users/${uid}`, {
+        kimlikKarti: {
+          tc:        tcNo,
+          ad:        userData.username || 'OYUNCU',
+          il:        userData.province || 'İstanbul',
+          verilis:   Date.now(),
+          muhtarOnay: true,
+          seriNo:    seriNo,
+          onaylayan: 'Muhtar',
+        },
+        canTrade: true,
+      });
+
+      // Onay kaydı da oluştur (istatistik için)
+      try {
+        const ref = await window.dbPush('approvals/idCard', {
+          uid,
+          username: userData.username || 'Anonim',
+          type: 'kimlik_karti',
+          fee,
+          status: 'approved',
+          approvedBy: 'Anında-Onay',
+          approvedAt: Date.now(),
+          ts: Date.now(),
+        });
+      } catch(e) {}
+
+      // GZ.data güncelle (sayfayı yenilemeye gerek kalmadan)
+      if (window.GZ?.data && uid === window.GZ.uid) {
+        window.GZ.data.kimlikKarti = {
+          tc: tcNo, ad: userData.username || 'OYUNCU',
+          il: userData.province || 'İstanbul',
+          verilis: Date.now(), muhtarOnay: true, seriNo,
+        };
+        window.GZ.data.canTrade = true;
+      }
+
+      window.toast?.(`🪪 Kimlik kartı hazır! TC: ${tcNo} | ${cashFmt(fee)} ödendi`, 'success', 8000);
+      return tcNo;
+    };
+
+    /* ── FIX: GZX_M02 — Doğru ücret mesajı + money kontrolü ── */
+    window.GZX_M02_checkTradeEligibility = async function(uid) {
+      if (!uid) uid = window.GZ?.uid;
+      const d = await window.dbGet(`users/${uid}`) || {};
+      const fee = (await window.dbGet('system/idCardFee')) || 10000;
+      if (!d.kimlikKarti) {
+        window.toast?.(
+          `⛔ Ticaret için önce Muhtardan kimlik kartı çıkartmalısınız! (${cashFmt(fee)})`,
+          'error', 8000
+        );
+        return false;
+      }
+      if (d.accountFrozen) { window.toast?.('⛔ Hesabınız dondurulmuş', 'error'); return false; }
+      if (d.suspended)     { window.toast?.('⛔ Hesabınız askıya alınmış', 'error'); return false; }
+      return true;
+    };
+
+    /* ── FIX: Muhtarlık bakiyesi "money" alanından oku ── */
+    // renderMuhtarlik() içinde _M.dbg kullanıyor, _M.fmt ile bakiye gösteriyor.
+    // Sorun: d.bakiye alanı → money alanına köprü kur.
+    // Her 2 saniyede GZ.data.bakiye = GZ.data.money şeklinde sync et
+    setInterval(function() {
+      if (window.GZ?.data && window.GZ.data.money !== undefined) {
+        window.GZ.data.bakiye = window.GZ.data.money;
+      }
+    }, 2000);
+
+    // Anlık sync
+    if (window.GZ?.data) {
+      window.GZ.data.bakiye = window.GZ.data.money || window.GZ.data.bakiye || 0;
+    }
+
+    /* ── FIX: Satış yapılırken kimlik kontrolü bypass ── */
+    // Bazı satış fonksiyonları canTrade ve kimlikKarti ikisini birden kontrol ediyor.
+    // Eğer kimlikKarti var ama canTrade yoksa → düzelt
+    (async function fixCanTrade() {
+      const uid = window.GZ?.uid;
+      if (!uid) return;
+      const d = await window.dbGet(`users/${uid}`);
+      if (d?.kimlikKarti && !d?.canTrade) {
+        await window.dbUpdate(`users/${uid}`, { canTrade: true });
+        if (window.GZ?.data) window.GZ.data.canTrade = true;
+        console.log('[FIX-14] canTrade düzeltildi');
+      }
+    })();
+
+    console.log('[FIX-14] ✅ Kimlik kartı sistemi düzeltildi');
+  }, 300);
+})();
+
