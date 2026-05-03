@@ -42,7 +42,7 @@
 
   // Yeni: Onaylı kimlik çıkartma
   window.GZX_M01_issueIDCard = async function(uid) {
-    const fee = (await dbGet('system/idCardFee')) || 500;
+    const fee = (await dbGet('system/idCardFee')) || 10000;
     const has = await dbGet(`users/${uid}/kimlikKarti`);
     if (has) return toast?.('Kimlik kartınız zaten var', 'warn');
 
@@ -60,9 +60,9 @@
       ts: Date.now(),
     });
 
-    toast?.('🪪 Kimlik kartı başvurunuz alındı! Admin onayı bekleniyor...', 'info', 6000);
+    toast?.('🪪 Kimlik kartı başvurunuz alındı! Admin onayı bekleniyor... (5 dakika içinde onaylanacak)', 'info', 8000);
 
-    // 30 saniye sonra admin online değilse AI bot onaylasın
+    // 5 dakika sonra admin online değilse AI asistan otomatik onaylasın
     setTimeout(async () => {
       const data = await dbGet(`approvals/idCard/${ref.key}`);
       if (data?.status !== 'pending') return;
@@ -70,7 +70,7 @@
       if (!adminOnline) {
         await GZX_aiOnayKimlik(ref.key);
       }
-    }, 30000);
+    }, 300000); // 5 dakika = 300.000 ms
 
     return ref.key;
   };
@@ -116,6 +116,305 @@
       await GZX_notify(data.uid, '❌ Kimlik başvurunuz reddedildi, ücretiniz iade edildi', 'warn');
       toast?.('❌ Reddedildi','success');
     }
+  };
+
+  /* ════════════════════════════════════════════════════════════════════════
+     1B) OYUNCULAR ARASI BORÇ SİSTEMİ
+     - Oyuncular birbirine borç para verebilir
+     - Firebase'e kayıt edilir (mahkemede delil olarak kullanılabilir)
+     - Borç geri ödeme, gecikme takibi
+     - Mahkemeye verme butonu (dava açma)
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Başka bir oyuncuya borç para gönder
+   * @param {string} alacakliUid  - Parayı alan (borç verilen) kişinin UID'si
+   * @param {number} miktar       - TL cinsinden borç miktarı
+   * @param {string} aciklama     - Borç açıklaması / neden veriliyor
+   * @param {number} vade         - Gün cinsinden geri ödeme vadesi (max 90 gün)
+   */
+  window.GZX_borcVer = async function(alacakliUid, miktar, aciklama, vade) {
+    const borcluUid = window.GZ?.uid;
+    if (!borcluUid) return toast?.('⛔ Giriş yapmalısınız', 'error');
+    if (!alacakliUid || alacakliUid === borcluUid) return toast?.('⛔ Kendinize borç veremezsiniz', 'error');
+    miktar = Math.floor(Number(miktar) || 0);
+    if (miktar < 100) return toast?.('⛔ Minimum borç miktarı ₺100', 'error');
+    vade = Math.min(90, Math.max(1, parseInt(vade) || 30));
+
+    // Kimlik kartı zorunlu
+    const borcluData = await dbGet(`users/${borcluUid}`);
+    if (!borcluData?.kimlikKarti) return toast?.('⛔ Borç vermek için kimlik kartı gerekli! Muhtardan çıkartın.', 'error', 7000);
+
+    // Alıcı var mı?
+    const alacakliData = await dbGet(`users/${alacakliUid}`);
+    if (!alacakliData) return toast?.('⛔ Kullanıcı bulunamadı', 'error');
+    if (alacakliData.banned) return toast?.('⛔ Bu kullanıcı banlı', 'error');
+    if (!alacakliData.kimlikKarti) return toast?.('⛔ Karşı tarafın kimlik kartı yok, borç yapılamaz', 'error', 7000);
+
+    // Bakiye kontrolü
+    const ok = await spendCash(borcluUid, miktar, 'Oyuncu borç transferi');
+    if (!ok) return toast?.(`💸 Yetersiz bakiye. Gerekli: ₺${miktar.toLocaleString('tr-TR')}`, 'error');
+
+    // Alıcıya parayı ekle
+    await addCash(alacakliUid, miktar, 'Oyuncu borç alındı');
+
+    // Geri ödeme tarihi
+    const vadeTarihi = Date.now() + (vade * 24 * 60 * 60 * 1000);
+
+    // Firebase'e borç kaydı oluştur
+    const borcRef = await dbPush('peerLoans', {
+      borcluUid,
+      borcluAd:    borcluData.username || 'Anonim',
+      borcluTC:    borcluData.kimlikKarti?.tc || '',
+      alacakliUid,
+      alacakliAd:  alacakliData.username || 'Anonim',
+      alacakliTC:  alacakliData.kimlikKarti?.tc || '',
+      miktar,
+      aciklama:    (aciklama || '').slice(0, 200),
+      vade,
+      vadeTarihi,
+      odemeDurumu: 'odenmedi',
+      odenemisMiktar: 0,
+      ts:          Date.now(),
+      status:      'aktif',
+    });
+
+    // Her iki tarafa da bildirim gönder
+    await GZX_notify(alacakliUid,
+      `💰 ${borcluData.username} sana ₺${miktar.toLocaleString('tr-TR')} borç verdi. Vade: ${vade} gün. Kayıt No: ${borcRef.key?.slice(-8)}`,
+      'info'
+    );
+    await GZX_notify(borcluUid,
+      `📋 ₺${miktar.toLocaleString('tr-TR')} borç verildi → ${alacakliData.username}. Vade: ${vade} gün. Kayıt No: ${borcRef.key?.slice(-8)}`,
+      'success'
+    );
+
+    toast?.(`✅ Borç kaydedildi! ₺${miktar.toLocaleString('tr-TR')} → ${alacakliData.username} | Kayıt: ${borcRef.key?.slice(-8)}`, 'success', 8000);
+    return borcRef.key;
+  };
+
+  /**
+   * Borç geri öde (kısmen veya tamamen)
+   * @param {string} borcId  - Firebase'deki borç kaydının ID'si
+   * @param {number} miktar  - Geri ödenecek miktar (boş bırakılırsa tamamı)
+   */
+  window.GZX_borcOde = async function(borcId, miktar) {
+    const odeyenUid = window.GZ?.uid;
+    if (!odeyenUid) return toast?.('⛔ Giriş yapmalısınız', 'error');
+
+    const borc = await dbGet(`peerLoans/${borcId}`);
+    if (!borc) return toast?.('⛔ Borç kaydı bulunamadı', 'error');
+    if (borc.status === 'kapandi') return toast?.('✅ Bu borç zaten kapatılmış', 'warn');
+
+    // Sadece borçlu ödeyebilir
+    if (borc.borcluUid !== odeyenUid) return toast?.('⛔ Bu borcu yalnızca borçlu kişi ödeyebilir', 'error');
+
+    const kalanBorc = borc.miktar - (borc.odenemisMiktar || 0);
+    miktar = miktar ? Math.min(Math.floor(Number(miktar)), kalanBorc) : kalanBorc;
+    if (miktar <= 0) return toast?.('⛔ Geçersiz miktar', 'error');
+
+    // Ödeyenden para çek
+    const ok = await spendCash(odeyenUid, miktar, 'Borç geri ödemesi');
+    if (!ok) return toast?.(`💸 Yetersiz bakiye. Gerekli: ₺${miktar.toLocaleString('tr-TR')}`, 'error');
+
+    // Alacaklıya ver
+    await addCash(borc.alacakliUid, miktar, 'Borç tahsilatı');
+
+    const yeniOdenen  = (borc.odenemisMiktar || 0) + miktar;
+    const tamOdendi   = yeniOdenen >= borc.miktar;
+
+    await dbUpdate(`peerLoans/${borcId}`, {
+      odenemisMiktar: yeniOdenen,
+      odemeDurumu:    tamOdendi ? 'odendi' : 'kismi',
+      status:         tamOdendi ? 'kapandi' : 'aktif',
+      sonOdemeTarihi: Date.now(),
+    });
+
+    // Bildirimler
+    await GZX_notify(borc.alacakliUid,
+      `💵 ${borc.borcluAd} borcunun ₺${miktar.toLocaleString('tr-TR')} kısmını ödedi. ${tamOdendi ? '✅ Borç tamamen kapandı!' : `Kalan: ₺${(borc.miktar-yeniOdenen).toLocaleString('tr-TR')}`}`,
+      tamOdendi ? 'success' : 'info'
+    );
+
+    if (tamOdendi) {
+      toast?.('✅ Borç tamamen ödendi ve kapatıldı!', 'success', 6000);
+    } else {
+      toast?.(`💵 ₺${miktar.toLocaleString('tr-TR')} ödendi. Kalan: ₺${(borc.miktar-yeniOdened).toLocaleString('tr-TR')}`, 'success', 6000);
+    }
+  };
+
+  /**
+   * Borcu mahkemeye taşı (dava aç)
+   * @param {string} borcId  - Firebase'deki borç kaydının ID'si
+   */
+  window.GZX_borcMahkeme = async function(borcId) {
+    const davacıUid = window.GZ?.uid;
+    if (!davacıUid) return toast?.('⛔ Giriş yapmalısınız', 'error');
+
+    const borc = await dbGet(`peerLoans/${borcId}`);
+    if (!borc) return toast?.('⛔ Borç kaydı bulunamadı', 'error');
+    if (borc.status === 'kapandi') return toast?.('✅ Bu borç zaten kapatılmış, dava açılamaz', 'warn');
+    if (borc.mahkemeStatus === 'davali') return toast?.('⚖️ Bu borç zaten mahkemede', 'warn');
+
+    // Sadece alacaklı dava açabilir
+    if (borc.alacakliUid !== davacıUid) return toast?.('⛔ Yalnızca alacaklı dava açabilir', 'error');
+
+    // Vade geçmiş olmalı
+    if (Date.now() < borc.vadeTarihi) {
+      const kalanGun = Math.ceil((borc.vadeTarihi - Date.now()) / (24*60*60*1000));
+      return toast?.(`⏳ Vade henüz dolmadı. ${kalanGun} gün sonra dava açabilirsiniz.`, 'warn', 6000);
+    }
+
+    // Mahkeme davası aç
+    const davaRef = await dbPush('mahkeme/davalar', {
+      tip:         'borc_davasi',
+      borcId,
+      davacıUid,
+      davacıAd:    borc.alacakliAd,
+      davacıTC:    borc.alacakliTC,
+      davalıUid:   borc.borcluUid,
+      davalıAd:    borc.borcluAd,
+      davalıTC:    borc.borcluTC,
+      talepMiktar: borc.miktar - (borc.odenemisMiktar || 0),
+      aciklama:    `Borç geri ödemesi yapılmadı. Borç tarihi: ${new Date(borc.ts).toLocaleDateString('tr-TR')}. Vade: ${borc.vade} gün.`,
+      delil:       `Firebase Kayıt ID: ${borcId} | Borç veriliş: ${new Date(borc.ts).toLocaleString('tr-TR')} | Vade tarihi: ${new Date(borc.vadeTarihi).toLocaleDateString('tr-TR')}`,
+      status:      'inceleniyor',
+      ts:          Date.now(),
+    });
+
+    // Borç kaydına dava durumunu işle
+    await dbUpdate(`peerLoans/${borcId}`, {
+      mahkemeStatus: 'davali',
+      davaId:        davaRef.key,
+      davaTs:        Date.now(),
+    });
+
+    // Davalıya bildirim
+    await GZX_notify(borc.borcluUid,
+      `⚖️ ${borc.alacakliAd} sizi mahkemeye verdi! Dava No: ${davaRef.key?.slice(-8)} | Borç: ₺${(borc.miktar-(borc.odenemisMiktar||0)).toLocaleString('tr-TR')}`,
+      'error'
+    );
+
+    toast?.(`⚖️ Dava açıldı! Dava No: ${davaRef.key?.slice(-8)}. Admin mahkeme kararı verecek.`, 'success', 8000);
+    return davaRef.key;
+  };
+
+  /**
+   * Kullanıcının tüm borçlarını listele (hem verdiği hem aldığı)
+   * @param {string} uid  - Kullanıcı UID'si (boş ise mevcut kullanıcı)
+   */
+  window.GZX_borcListesi = async function(hedefUid) {
+    const uid = hedefUid || window.GZ?.uid;
+    if (!uid) return [];
+    const tumBorc = await dbGet('peerLoans') || {};
+    const list = [];
+    for (const [id, b] of Object.entries(tumBorc)) {
+      if (b.borcluUid === uid || b.alacakliUid === uid) {
+        list.push({ id, ...b });
+      }
+    }
+    return list.sort((a, b) => b.ts - a.ts);
+  };
+
+  /**
+   * Borç sistemi UI panelini render et (cüzdan / oyun içi)
+   */
+  window.GZX_renderBorcPaneli = async function(container) {
+    if (!container) return;
+    const uid = window.GZ?.uid;
+    if (!uid) { container.innerHTML = '<p style="color:#ef4444;padding:20px">Giriş yapın</p>'; return; }
+
+    container.innerHTML = '<div style="padding:16px;color:#94a3b8;font-size:12px">Borçlar yükleniyor...</div>';
+    const liste = await GZX_borcListesi(uid);
+
+    const verilenler = liste.filter(b => b.borcluUid === uid);
+    const alinanlar  = liste.filter(b => b.alacakliUid === uid);
+
+    function _borcKart(b, rol) {
+      const karsiTaraf = rol === 'borclu' ? b.alacakliAd : b.borcluAd;
+      const kalan = b.miktar - (b.odenemisMiktar || 0);
+      const gecikti = b.status !== 'kapandi' && Date.now() > b.vadeTarihi;
+      const renk = b.status === 'kapandi' ? '#22c55e' : gecikti ? '#ef4444' : '#f59e0b';
+      const durum = b.status === 'kapandi' ? '✅ Kapalı' : gecikti ? '🔴 GECİKMİŞ' : '⏳ Aktif';
+
+      return `
+        <div style="background:#0d1a2e;border:1px solid ${renk}44;border-radius:10px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:11px;color:${renk};font-weight:700">${durum}</span>
+            <span style="font-size:10px;color:#475569">#${b.id?.slice(-8)}</span>
+          </div>
+          <div style="font-size:13px;color:#e2e8f0;font-weight:700;margin-bottom:4px">
+            ${rol === 'borclu' ? '👤 Alacaklı' : '👤 Borçlu'}: ${karsiTaraf}
+          </div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">
+            💬 ${b.aciklama || 'Açıklama yok'}
+          </div>
+          <div style="display:flex;gap:12px;font-size:12px;margin-bottom:8px">
+            <span>💰 Toplam: <b style="color:#60a5fa">₺${b.miktar?.toLocaleString('tr-TR')}</b></span>
+            <span>💵 Kalan: <b style="color:${renk}">₺${kalan.toLocaleString('tr-TR')}</b></span>
+          </div>
+          <div style="font-size:11px;color:#475569;margin-bottom:8px">
+            📅 Vade: ${new Date(b.vadeTarihi).toLocaleDateString('tr-TR')} | Tarih: ${new Date(b.ts).toLocaleDateString('tr-TR')}
+            ${b.mahkemeStatus === 'davali' ? ' | <span style="color:#ef4444">⚖️ DAVALI</span>' : ''}
+          </div>
+          ${b.status !== 'kapandi' && rol === 'borclu' ? `
+            <button onclick="(async()=>{const m=prompt('Kaç TL ödemek istiyorsunuz? (Kalan: ₺${kalan.toLocaleString('tr-TR')})');if(m&&parseInt(m)>0){await GZX_borcOde('${b.id}',parseInt(m));GZX_renderBorcPaneli(document.getElementById('borcPanelContainer'));}})()"
+              style="background:#1e40af;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">
+              💵 Ödeme Yap
+            </button>` : ''}
+          ${b.status !== 'kapandi' && rol === 'alacakli' && Date.now() > b.vadeTarihi && b.mahkemeStatus !== 'davali' ? `
+            <button onclick="(async()=>{if(confirm('${b.borcluAd} kişisini mahkemeye vermek istiyor musunuz?')){await GZX_borcMahkeme('${b.id}');GZX_renderBorcPaneli(document.getElementById('borcPanelContainer'));}})()"
+              style="background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer">
+              ⚖️ Mahkemeye Ver
+            </button>` : ''}
+        </div>`;
+    }
+
+    container.innerHTML = `
+      <div style="padding:16px">
+        <h3 style="color:#e2e8f0;font-size:15px;font-weight:800;margin:0 0 14px">💰 Borç Sistemi</h3>
+
+        <!-- Yeni Borç Ver -->
+        <div style="background:#0d1a2e;border:1px solid #1e3a5f;border-radius:10px;padding:14px;margin-bottom:18px">
+          <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:10px">➕ Yeni Borç Ver</div>
+          <input id="borcAlacakliId" placeholder="Alacaklının UID'si veya Kullanıcı Adı"
+            style="width:100%;background:#060d18;border:1px solid #1e3a5f;border-radius:7px;color:#e2e8f0;padding:8px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input id="borcMiktar" type="number" placeholder="Miktar (₺)" min="100"
+              style="flex:1;background:#060d18;border:1px solid #1e3a5f;border-radius:7px;color:#e2e8f0;padding:8px;font-size:12px">
+            <input id="borcVade" type="number" placeholder="Vade (gün)" min="1" max="90" value="30"
+              style="width:90px;background:#060d18;border:1px solid #1e3a5f;border-radius:7px;color:#e2e8f0;padding:8px;font-size:12px">
+          </div>
+          <input id="borcAciklama" placeholder="Borç açıklaması (isteğe bağlı)"
+            style="width:100%;background:#060d18;border:1px solid #1e3a5f;border-radius:7px;color:#e2e8f0;padding:8px;font-size:12px;margin-bottom:8px;box-sizing:border-box">
+          <button onclick="(async()=>{
+            const al=document.getElementById('borcAlacakliId').value.trim();
+            const mk=parseInt(document.getElementById('borcMiktar').value)||0;
+            const vd=parseInt(document.getElementById('borcVade').value)||30;
+            const ac=document.getElementById('borcAciklama').value.trim();
+            if(!al||mk<100){toast?.('⛔ UID ve min ₺100 girin','error');return;}
+            // UID veya kullanıcı adı ile ara
+            let tuid=al;
+            if(!al.startsWith('user')){
+              const snap=await dbGet('users');
+              if(snap){const found=Object.entries(snap).find(([,u])=>u.username?.toLowerCase()===al.toLowerCase());if(found)tuid=found[0];}
+            }
+            await GZX_borcVer(tuid,mk,ac,vd);
+            GZX_renderBorcPaneli(document.getElementById('borcPanelContainer'));
+          })()"
+            style="width:100%;background:linear-gradient(135deg,#1e40af,#1d4ed8);color:#fff;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">
+            💸 Borç Ver
+          </button>
+        </div>
+
+        <!-- Verdiklerim -->
+        <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#475569;margin-bottom:8px">VERDİĞİM BORÇLAR (${verilenler.length})</div>
+        ${verilenler.length ? verilenler.map(b => _borcKart(b, 'borclu')).join('') : '<div style="color:#334155;font-size:12px;padding:10px;text-align:center">Verdiğiniz borç yok</div>'}
+
+        <!-- Aldıklarım -->
+        <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#475569;margin:14px 0 8px">ALDIĞIM BORÇLAR (${alinanlar.length})</div>
+        ${alinanlar.length ? alinanlar.map(b => _borcKart(b, 'alacakli')).join('') : '<div style="color:#334155;font-size:12px;padding:10px;text-align:center">Aldığınız borç yok</div>'}
+      </div>`;
   };
 
   /* ════════════════════════════════════════════════════════════════════════
@@ -214,16 +513,16 @@
     if (window.GZ?.data?.isFounder) GZX_botAktivite();
   }, 5 * 60 * 1000);
 
-  // Her 30 saniyede admin onay kuyruğunu kontrol et
+  // Her 5 dakikada admin onay kuyruğunu kontrol et
   setInterval(async () => {
-    if (window.GZ?.data?.isFounder) return; // Admin online ise AI bot çalışmasın
+    if (window.GZ?.data?.isFounder) return; // Admin online ise AI asistan çalışmasın
     const queue = await dbGet('approvals/idCard') || {};
     for (const [id, app] of Object.entries(queue)) {
-      if (app.status === 'pending' && Date.now() - app.ts > 30000) {
+      if (app.status === 'pending' && Date.now() - app.ts > 300000) { // 5 dakika
         await GZX_aiOnayKimlik(id);
       }
     }
-  }, 30000);
+  }, 60000); // Her 1 dakikada kontrol et (5 dk geçmişse onaylar)
 
 
   /* ════════════════════════════════════════════════════════════════════════

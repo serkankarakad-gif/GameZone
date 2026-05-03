@@ -2700,29 +2700,243 @@
     } catch(e) {}
   }
 
-  function navTo(el, section) {
+  async function _checkKimlikBadge() {
+    try {
+      const snap = await db().ref('approvals/idCard').once('value');
+      const all = snap.val() || {};
+      const n = Object.values(all).filter(a => a.status === 'pending').length;
+      const el = document.getElementById('kimlikOnayBadge');
+      if (el) { el.textContent = n; el.hidden = n === 0; }
+    } catch(e) {}
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     KİMLİK KARTI BAŞVURULARI PANELİ
+     ══════════════════════════════════════════════════════════════════════════ */
+  async function openKimlikOnayPanel() {
+    _adminBody('<div style="padding:24px;color:#94a3b8;font-size:13px">🪪 Kimlik başvuruları yükleniyor...</div>');
+
+    const snap = await db().ref('approvals/idCard').once('value');
+    const all  = snap.val() || {};
+    const list = Object.entries(all).sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
+
+    const bekleyenler = list.filter(([,v]) => v.status === 'pending');
+    const gerceklesens = list.filter(([,v]) => v.status !== 'pending');
+
+    function _kart(id, d) {
+      const ts = new Date(d.ts||0).toLocaleString('tr-TR');
+      const renk = d.status==='approved' ? '#22c55e' : d.status==='rejected' ? '#ef4444' : '#f59e0b';
+      const durumEmoji = d.status==='approved' ? '✅' : d.status==='rejected' ? '❌' : '⏳';
+      const durumAd = d.status==='approved' ? 'Onaylandı' : d.status==='rejected' ? 'Reddedildi' : 'Bekliyor';
+      return `
+        <div style="background:#0d1a2e;border:1px solid ${renk}44;border-radius:10px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:700;color:${renk}">${durumEmoji} ${durumAd}</span>
+            <span style="font-size:10px;color:#334155">#${id.slice(-10)}</span>
+          </div>
+          <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px">👤 ${d.username || 'Anonim'}</div>
+          <div style="font-size:11px;color:#475569;margin-bottom:8px">
+            💰 Ücret: ${_fmt(d.fee || 10000)} &nbsp;|&nbsp; 🕐 ${ts}
+            ${d.approvedBy ? ` &nbsp;|&nbsp; Onaylayan: ${d.approvedBy}` : ''}
+            ${d.rejectedBy ? ` &nbsp;|&nbsp; Reddeden: ${d.rejectedBy}` : ''}
+          </div>
+          ${d.status === 'pending' ? `
+            <div style="display:flex;gap:8px">
+              <button onclick="(async()=>{
+                await window.GZX_adminOnayKimlik?.('${id}','approve');
+                window.AP.navTo(null,'kimlikOnay');
+              })()" style="flex:1;background:#064e3b;color:#4ade80;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">
+                ✅ ONAYLA
+              </button>
+              <button onclick="(async()=>{
+                if(!confirm('Bu başvuruyu reddet ve ücreti iade et?')) return;
+                await window.GZX_adminOnayKimlik?.('${id}','reject');
+                window.AP.navTo(null,'kimlikOnay');
+              })()" style="flex:1;background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">
+                ❌ REDDET (İade Et)
+              </button>
+            </div>` : ''}
+        </div>`;
+    }
+
+    _adminBody(_apSection('🪪 Kimlik Kartı Başvuruları', `
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
+          <div style="font-size:28px;font-weight:900;color:#f59e0b">${bekleyenler.length}</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px">Bekleyen</div>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
+          <div style="font-size:28px;font-weight:900;color:#22c55e">${gerceklesens.filter(([,v])=>v.status==='approved').length}</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px">Onaylanan</div>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
+          <div style="font-size:28px;font-weight:900;color:#ef4444">${gerceklesens.filter(([,v])=>v.status==='rejected').length}</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px">Reddedilen</div>
+        </div>
+        <button onclick="window.AP.navTo(null,'kimlikOnay')"
+          style="margin-left:auto;background:#1e3a5f;color:#60a5fa;border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;cursor:pointer;align-self:center">
+          🔄 Yenile
+        </button>
+      </div>
+
+      ${bekleyenler.length > 0 ? `
+        <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">⏳ BEKLEYENLEr (${bekleyenler.length})</div>
+        ${bekleyenler.map(([id,d]) => _kart(id, d)).join('')}
+      ` : '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:20px;text-align:center;color:#22c55e;font-weight:700;margin-bottom:20px">✅ Bekleyen başvuru yok!</div>'}
+
+      ${gerceklesens.length > 0 ? `
+        <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#475569;margin:20px 0 10px">📋 GEÇMİŞ (${gerceklesens.length})</div>
+        ${gerceklesens.slice(0,20).map(([id,d]) => _kart(id, d)).join('')}
+      ` : ''}
+    `));
+
+    _checkKimlikBadge();
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     BORÇ & MAHKEME DAVA PANELİ
+     ══════════════════════════════════════════════════════════════════════════ */
+  async function openBorcDavalarPanel() {
+    _adminBody('<div style="padding:24px;color:#94a3b8;font-size:13px">⚖️ Davalar yükleniyor...</div>');
+
+    const [davalarSnap, borclarSnap] = await Promise.all([
+      db().ref('mahkeme/davalar').once('value'),
+      db().ref('peerLoans').once('value'),
+    ]);
+
+    const davalar = davalarSnap.val() || {};
+    const borclar = borclarSnap.val() || {};
+
+    const davaList = Object.entries(davalar)
+      .filter(([,d]) => d.tip === 'borc_davasi')
+      .sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
+
+    const aktifBorclar = Object.entries(borclar)
+      .filter(([,b]) => b.status === 'aktif')
+      .sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
+
+    function _davaKart(id, d) {
+      const renk = d.status === 'kararveriildi' ? '#22c55e' : d.status === 'reddedildi' ? '#ef4444' : '#f59e0b';
+      return `
+        <div style="background:#0d1a2e;border:1px solid ${renk}44;border-radius:10px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-size:12px;font-weight:700;color:${renk}">⚖️ Dava #${id.slice(-8)}</span>
+            <span style="font-size:10px;color:#475569">${new Date(d.ts||0).toLocaleDateString('tr-TR')}</span>
+          </div>
+          <div style="font-size:12px;color:#e2e8f0;margin-bottom:4px">
+            👤 Davacı: <b>${d.davacıAd}</b> (TC: ${d.davacıTC || 'N/A'})<br>
+            👤 Davalı: <b>${d.davalıAd}</b> (TC: ${d.davalıTC || 'N/A'})
+          </div>
+          <div style="font-size:12px;color:#60a5fa;font-weight:700;margin-bottom:4px">
+            💰 Talep: ${_fmt(d.talepMiktar)}
+          </div>
+          <div style="font-size:11px;color:#475569;margin-bottom:8px">
+            📋 ${d.aciklama}<br>
+            🔑 Delil: ${d.delil}
+          </div>
+          ${d.status === 'inceleniyor' ? `
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button onclick="(async()=>{
+                if(!confirm('Davacı lehine karar: davalıdan ₺${d.talepMiktar} kesilsin mi?')) return;
+                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'kararveriildi',karar:'davaci_lehine',kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
+                await window.addCash?.('${d.davacıUid}',${d.talepMiktar},'Mahkeme kararı tahsilat');
+                await window.spendCash?.('${d.davalıUid}',${d.talepMiktar},'Mahkeme kararı borç');
+                await window.GZX_notify?.('${d.davacıUid}','⚖️ Mahkeme kazandınız! ₺${(d.talepMiktar||0).toLocaleString('tr-TR')} hesabınıza aktarıldı.','success');
+                await window.GZX_notify?.('${d.davalıUid}','⚖️ Mahkeme kaybettiniz. ₺${(d.talepMiktar||0).toLocaleString('tr-TR')} hesabınızdan kesildi.','error');
+                window.AP.navTo(null,'borcDavalar');
+              })()" style="background:#064e3b;color:#4ade80;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
+                ✅ Davacı Lehine Karar
+              </button>
+              <button onclick="(async()=>{
+                if(!confirm('Davayı reddet (davalı lehine)?')) return;
+                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'reddedildi',karar:'davali_lehine',kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
+                await window.GZX_notify?.('${d.davacıUid}','⚖️ Davanız reddedildi.','warn');
+                await window.GZX_notify?.('${d.davalıUid}','⚖️ Dava lehinize sonuçlandı.','success');
+                window.AP.navTo(null,'borcDavalar');
+              })()" style="background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
+                ❌ Davayı Reddet
+              </button>
+              <button onclick="(async()=>{
+                const uzlasma=parseInt(prompt('Uzlaşma miktarı (₺)?')||0);
+                if(!uzlasma) return;
+                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'uzlasma',karar:'uzlasma',uzlasmaMiktar:uzlasma,kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
+                await window.addCash?.('${d.davacıUid}',uzlasma,'Uzlaşma ödemesi');
+                await window.spendCash?.('${d.davalıUid}',uzlasma,'Uzlaşma ödemesi');
+                window.AP.navTo(null,'borcDavalar');
+              })()" style="background:#1e3a5f;color:#60a5fa;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
+                🤝 Uzlaşma
+              </button>
+            </div>` : `<span style="font-size:11px;color:${renk}">Karar: ${d.karar} ${d.hakim ? '| Hakim: '+d.hakim : ''}</span>`}
+        </div>`;
+    }
+
+    _adminBody(_apSection('⚖️ Borç Davaları & Mahkeme', `
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
+          <div style="font-size:28px;font-weight:900;color:#f59e0b">${davaList.filter(([,d])=>d.status==='inceleniyor').length}</div>
+          <div style="font-size:11px;color:#475569">Bekleyen Dava</div>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
+          <div style="font-size:28px;font-weight:900;color:#3b82f6">${aktifBorclar.length}</div>
+          <div style="font-size:11px;color:#475569">Aktif Borç</div>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
+          <div style="font-size:28px;font-weight:900;color:#ef4444">${aktifBorclar.filter(([,b])=>Date.now()>b.vadeTarihi).length}</div>
+          <div style="font-size:11px;color:#475569">Vadesi Geçmiş</div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">⚖️ MAHKEME DOVALARI</div>
+      ${davaList.length ? davaList.map(([id,d])=>_davaKart(id,d)).join('') : '<div style="color:#334155;font-size:12px;padding:14px;text-align:center">Henüz dava yok</div>'}
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#475569;margin:20px 0 10px">💰 TÜM AKTİF BORÇLAR</div>
+      ${aktifBorclar.slice(0,30).map(([id,b]) => `
+        <div style="background:#0d1a2e;border:1px solid ${Date.now()>b.vadeTarihi?'#ef444455':'#1a2f4a'};border-radius:8px;padding:12px;margin-bottom:8px;font-size:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="color:#e2e8f0;font-weight:700">${b.borcluAd} → ${b.alacakliAd}</span>
+            <span style="color:${Date.now()>b.vadeTarihi?'#ef4444':'#22c55e'};font-weight:700">${Date.now()>b.vadeTarihi?'🔴 GECİKMİŞ':'✅ Aktif'}</span>
+          </div>
+          <div style="color:#60a5fa">₺${(b.miktar-(b.odenemisMiktar||0)).toLocaleString('tr-TR')} kalan / ₺${b.miktar?.toLocaleString('tr-TR')} toplam</div>
+          <div style="color:#475569;font-size:11px">Vade: ${new Date(b.vadeTarihi).toLocaleDateString('tr-TR')} | ${b.aciklama||''}</div>
+        </div>`).join('') || '<div style="color:#334155;font-size:12px;padding:14px;text-align:center">Aktif borç yok</div>'}
+    `));
+  }
+
+  function openTxLog() {
+    _adminBody(_apSection('🔍 Şüpheli Hareketler', '<div style="color:#475569;padding:20px;text-align:center">Bu bölüm yakında aktif olacak</div>'));
+  }
+  function openEventsManager() {
+    _adminBody(_apSection('⚡ Etkinlik Yönetimi', '<div style="color:#475569;padding:20px;text-align:center">Bu bölüm yakında aktif olacak</div>'));
+  }
+
+
     document.querySelectorAll('.admin-nav-btn,.asnb').forEach(b=>b.classList.remove('active'));
     if (el) el.classList.add('active');
     const routes = {
-      dashboard: renderDashboard,
-      users:     openAllUsersModal,
-      economy:   openGlobalEconModal,
-      krediOnay: openKrediOnayPanel,
-      vergi:     openVergiPanel,
-      merkez:    openMerkezBankasiPanel,
-      borsa:     openBorsaPanel,
-      kripto:    openKriptoPanel,
-      games:     openGameManagement,
-      news:      openNewsManager,
-      chat:      openChatManager,
-      security:  openSecurityLogs,
-      system:    openSystemSettings,
-      analytics: openAnalytics
+      dashboard:  renderDashboard,
+      users:      openAllUsersModal,
+      economy:    openGlobalEconModal,
+      krediOnay:  openKrediOnayPanel,
+      kimlikOnay: openKimlikOnayPanel,
+      borcDavalar:openBorcDavalarPanel,
+      vergi:      openVergiPanel,
+      merkez:     openMerkezBankasiPanel,
+      borsa:      openBorsaPanel,
+      kripto:     openKriptoPanel,
+      games:      openGameManagement,
+      news:       openNewsManager,
+      chat:       openChatManager,
+      security:   openSecurityLogs,
+      system:     openSystemSettings,
+      analytics:  openAnalytics,
+      txlog:      openTxLog,
+      events:     openEventsManager,
     };
     const fn = routes[section];
     if (typeof fn==='function') fn.call(window.AP);
     else _adminBody('<div style="padding:40px;text-align:center;color:#64748b">Bu bölüm henüz geliştiriliyor...</div>');
     _checkKrediOnayBadge();
+    _checkKimlikBadge();
   }
 
   /* Topbar Butonu */
@@ -3226,6 +3440,7 @@
   /* Public API */
   window.AP = {
     openAdminPanel, closeAdminPanel, navTo, openKrediOnayPanel, openVergiPanel, openMerkezBankasiPanel, openBorsaPanel, openKriptoPanel,
+    openKimlikOnayPanel, openBorcDavalarPanel, openTxLog, openEventsManager,
     renderDashboard, openUserSearch, _searchUsers, _filterUsers,
     openUserDetail, _renderUserResults, _liveSearchUsers, _toggleAllCheck,
     userGrantMoney, userRemoveMoney, userGrantDiamond, userRemoveDiamond,
