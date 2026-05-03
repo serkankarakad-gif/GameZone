@@ -459,14 +459,20 @@
      ══════════════════════════════════════════════════════════════════════════ */
 
   window.GZX_XP_CFG = {
-    baseXP:          100,    // Seviye 1 için gereken XP
-    scaleFactor:     1.85,   // Her seviye bu katsayı ile çarpılır
-    dailyXPCap:      5000,   // Günlük maksimum XP
-    maxDailyLevels:  5,      // Günde max seviye atlama
+    baseXP:          200,    // Seviye 1 için gereken XP (firebase-init xpForLevel ile uyumlu)
+    scaleFactor:     1.9,    // lv^1.9 katsayısı (firebase-init ile eşleşiyor)
+    dailyXPCap:      2000,   // Günlük max XP — hızlı leveling engeli
+    maxDailyLevels:  2,      // Günde max 2 seviye atlanabilir
     energyCap:       100,    // Maksimum enerji
     energyPerHour:   8,      // Saatte enerji yenilenme
     energyPerAction: 2,      // Her XP kazanma işleminde enerji tüketimi (ortalama)
   };
+
+  /* GZX_xpRequired'ı firebase-init.js xpForLevel ile senkronize et */
+  window.GZX_xpRequired = function (level) {
+    return Math.floor(200 * Math.pow(level, 1.9));
+  };
+  window.xpForLevel = window.GZX_xpRequired; // Alias — her iki isim de çalışsın
 
   /* Seviye için gereken XP (logaritmik) */
   window.GZX_xpRequired = function (level) {

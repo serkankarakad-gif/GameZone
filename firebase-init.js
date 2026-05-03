@@ -184,9 +184,9 @@ async function spendDiamonds(uid, amount){
 
 /* XP ve seviye */
 function xpForLevel(lv){
-  // Seviye başına gereken XP — yüksek seviyelerde zorlaşır
-  // L1->L2: 100, L2->L3: 200, üstü kübik artış
-  return Math.floor(100 * Math.pow(lv, 1.6));
+  // Dengeli XP eğrisi — düşük seviyelerde hızlı, yüksekte çok zorlaşır
+  // Lv10: ~63K toplam, Lv50: ~6M toplam, Lv100: ~44M toplam
+  return Math.floor(200 * Math.pow(lv, 1.9));
 }
 async function addXP(uid, amount){
   await db.ref(`users/${uid}/xp`).transaction(cur => (cur||0)+amount);

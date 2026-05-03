@@ -996,296 +996,141 @@ window.cryptoExecSell = async function(sym) {
 };
 
 /* ============================================================
-   BANKALAR SEKMESİ — Tam Banka Sistemi
+   BANKALAR SEKMESİ — ekonomi.js BANKALAR ile uyumlu
+   (Eski blok kaldırıldı. window.BANKALAR ekonomi.js'ten geliyor.)
    ============================================================ */
-const BANKALAR = [
-  { id:'ziraat',  ad:'Ziraat Bankası',    emo:'🌾', renk:'#1e5cb8', faiz:0.032, krediMult:6000,  tanim:'Tarım destekli kredi, düşük faiz' },
-  { id:'halk',    ad:'Halk Bankası',      emo:'🏛️', renk:'#0d9488', faiz:0.035, krediMult:5500,  tanim:'Halk dostu, orta faiz' },
-  { id:'vakif',   ad:'Vakıf Bankası',     emo:'🕌', renk:'#7c3aed', faiz:0.038, krediMult:7000,  tanim:'Yüksek limit, kurumsal kredi' },
-  { id:'akbank',  ad:'Akbank',            emo:'🔴', renk:'#dc2626', faiz:0.042, krediMult:8000,  tanim:'Hızlı onay, dijital bankacılık' },
-  { id:'garanti', ad:'Garanti BBVA',      emo:'💚', renk:'#16a34a', faiz:0.040, krediMult:7500,  tanim:'Bireysel kredi paketi, avantajlı' },
-  { id:'isbank',  ad:'İş Bankası',        emo:'🏦', renk:'#1d4ed8', faiz:0.036, krediMult:6500,  tanim:'Güçlü altyapı, yatırım odaklı' },
-  { id:'yapi',    ad:'Yapı Kredi',        emo:'🟡', renk:'#d97706', faiz:0.044, krediMult:9000,  tanim:'En yüksek kredi limiti' },
-  { id:'enpara',  ad:'EnPara (Dijital)',   emo:'📱', renk:'#7c3aed', faiz:0.028, krediMult:4000,  tanim:'En düşük faiz, sadece dijital' },
-];
-window.BANKALAR_MAP = {};
-BANKALAR.forEach(b=>window.BANKALAR_MAP[b.id]=b);
 
-async function renderBankaSekme(activeTab){
+async function renderBankaSekme(activeTab) {
   activeTab = activeTab || 'hesaplar';
   const main = $('#appMain');
-  const bank = await dbGet('bank/'+GZ.uid) || {};
-  const lv = GZ.data.level||1;
+  if (!main) return;
+
+  const uid     = GZ.uid;
+  const lv      = GZ.data?.level || 1;
+  const bank    = (await dbGet('bank/' + uid)) || {};
   const loanBankId = bank.loanBankId || null;
-  const dbFaizler = (await dbGet('system/bankFaizler')) || {};
-  const mbRates = (await dbGet('system/merkezBankasi')) || {};
-  const vergiOran = Math.min(90, mbRates.gelirOrani || 40);
+  const dbFaizler  = (await dbGet('system/bankFaizler')) || {};
+  const BLIST   = window.BANKALAR || [];
 
-  // Özet rakamlar
-  const cuzdan   = GZ.data.money||0;
-  const vadesiz  = bank.balance||0;
-  const yatirim  = bank.investment||0;
-  const borc     = bank.loan||0;
-  const haftaGelir = GZ.data.weeklyRevenue||0;
-  const haftaVergi = +(haftaGelir * vergiOran/100).toFixed(2);
-  const netServet  = cuzdan + vadesiz + yatirim - borc;
-
-  // Sekme HTML
+  /* ── SEKMELER ── */
   const tabs = [
-    { id:'hesaplar', lbl:'💰 Hesaplar' },
-    { id:'krediler', lbl:'💳 Krediler' },
-    { id:'vergiler', lbl:'🏛️ Vergiler' },
-    { id:'akis',     lbl:'📊 Para Akışı' },
+    { id: 'hesaplar', label: '🏦 Hesaplar'   },
+    { id: 'kredi',    label: '💳 Kredi'       },
+    { id: 'vadeli',   label: '📈 Vadeli'      },
+    { id: 'transfer', label: '💸 Transfer'    },
   ];
 
-  let html = `
-    <!-- TOPBAR -->
-    <div style="background:linear-gradient(135deg,#1e5cb8,#0d9488);padding:14px 14px 10px;margin:-14px -14px 12px">
-      <div style="font-size:10px;color:rgba(255,255,255,.7);margin-bottom:2px">NET SERVET</div>
-      <div style="font-size:26px;font-weight:900;color:#fff">${cashFmt(netServet)}</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px">
-        ${[
-          {l:'Cüzdan',  v:cuzdan,  c:'#fff'},
-          {l:'Vadesiz', v:vadesiz, c:'#fff'},
-          {l:'Yatırım', v:yatirim, c:'#6ee7b7'},
-          {l:'Borç',    v:borc,    c:borc>0?'#fca5a5':'#6ee7b7'},
-        ].map(x=>`<div style="background:rgba(255,255,255,.12);border-radius:8px;padding:6px;text-align:center">
-          <div style="font-size:12px;font-weight:800;color:${x.c}">${cashFmt(x.v)}</div>
-          <div style="font-size:9px;color:rgba(255,255,255,.65)">${x.l}</div>
-        </div>`).join('')}
-      </div>
-    </div>
+  const tabBar = `<div class="tab-bar" style="display:flex;gap:6px;overflow-x:auto;padding:0 0 10px;margin-bottom:12px">
+    ${tabs.map(t => `<button onclick="renderBankaSekme('${t.id}')"
+      style="padding:8px 16px;border-radius:999px;border:none;cursor:pointer;font-weight:700;font-size:12px;
+      background:${activeTab===t.id?'var(--primary)':'var(--bg2)'};
+      color:${activeTab===t.id?'#fff':'var(--text-muted)'};white-space:nowrap">
+      ${t.label}</button>`).join('')}
+  </div>`;
 
-    <!-- SEKMELER -->
-    <div style="display:flex;gap:4px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px">
-      ${tabs.map(t=>`<button onclick="renderBankaSekme('${t.id}')"
-        style="flex-shrink:0;padding:6px 10px;border-radius:20px;font-size:11px;font-weight:700;
-        background:${activeTab===t.id?'var(--primary)':'var(--card)'};
-        color:${activeTab===t.id?'#fff':'var(--text-muted)'};
-        border:1px solid ${activeTab===t.id?'var(--primary)':'var(--border)'}">${t.lbl}</button>`).join('')}
-    </div>`;
+  let content = '';
 
-  // ── HESAPLAR SEKMESİ ──
+  /* ══════════════ HESAPLAR SEKMESİ ══════════════ */
   if (activeTab === 'hesaplar') {
-    html += `
-      <div class="card mb-8">
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🏦 Vadesiz Hesap</div>
-        <div style="font-size:24px;font-weight:900;color:var(--primary);margin-bottom:4px">${cashFmt(vadesiz)}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Faizsiz, her zaman çekilebilir</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button class="btn-primary" style="font-size:12px" onclick="askBankOp('deposit')">💵 Para Yatır</button>
-          <button class="btn-mini" style="font-size:12px;padding:10px" onclick="askBankOp('withdraw')">💸 Para Çek</button>
+    const money     = GZ.data?.money || GZ.data?.bakiye || 0;
+    const diamonds  = GZ.data?.diamonds || 0;
+    const krediNotu = typeof window.getKrediNotu === 'function' ? (await window.getKrediNotu(uid)) : 50;
+    const notRenk   = krediNotu >= 80 ? '#22c55e' : krediNotu >= 60 ? '#f59e0b' : '#ef4444';
+
+    content = `
+      <!-- Ana bakiye kartı -->
+      <div class="card" style="background:linear-gradient(135deg,#1e3a8a,#1e40af);color:#fff;margin-bottom:12px">
+        <div style="font-size:11px;opacity:.7;margin-bottom:4px">TOPLAM BAKİYE</div>
+        <div style="font-size:28px;font-weight:900">${cashFmt(money)}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;opacity:.8">
+          <span>💎 ${diamonds} Elmas</span>
+          <span>Lv ${lv}</span>
+          <span>Kredi Notu: <b style="color:${notRenk}">${krediNotu}</b></span>
         </div>
       </div>
-      <div class="card mb-8">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="font-size:13px;font-weight:700;color:var(--text)">📈 Yatırım Hesabı</div>
-          <span style="font-size:10px;background:#16a34a22;color:#16a34a;padding:2px 8px;border-radius:999px;font-weight:700">%0.3 Günlük</span>
-        </div>
-        <div style="font-size:24px;font-weight:900;color:#16a34a;margin-bottom:4px">${cashFmt(yatirim)}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">
-          Tahmini aylık kazanç: <b style="color:#16a34a">${cashFmt(+(yatirim*0.003*30).toFixed(2))}</b>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button class="btn-primary" style="font-size:12px" onclick="askBankOp('invest')">📈 Yatır</button>
-          <button class="btn-mini" style="font-size:12px;padding:10px" onclick="askBankOp('investWithdraw')">💸 Çek</button>
-        </div>
-      </div>
-      <div class="card" style="background:rgba(30,92,184,.04);border-color:#1e5cb822">
-        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">📋 Haftalık Özet</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          ${[
-            ['Brüt Gelir (bu hafta)',  cashFmt(+(haftaGelir*(1/(1-vergiOran/100))).toFixed(2)), '#e2e8f0'],
-            ['Ödenen Vergi (%'+vergiOran+')', '−'+cashFmt(haftaVergi), '#ef4444'],
-            ['Net Gelir', cashFmt(haftaGelir), '#22c55e'],
-            ['Sonraki Cumartesi Kesim', borc>0?cashFmt(+(borc*(mbRates.gelirOrani||0.032)/52).toFixed(2))+' faiz':'Yok', '#f59e0b'],
-          ].map(([k,v,c])=>`<div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:11px;color:var(--text-muted)">${k}</span>
-            <span style="font-size:12px;font-weight:700;color:${c}">${v}</span>
-          </div>`).join('')}
-        </div>
-      </div>`;
 
-  // ── KREDİLER SEKMESİ ──
-  } else if (activeTab === 'krediler') {
-    const BANKALAR_LIST = window.BANKALAR || [];
-    if (borc > 0) {
-      const b = window.BANKALAR_MAP?.[loanBankId] || {};
-      const faiz = dbFaizler[loanBankId] || b.faiz || 0.035;
-      const weeklyFaiz = +(borc * faiz / 52).toFixed(2);
-      html += `
-        <div class="card mb-10" style="border-color:#ef444444;background:rgba(239,68,68,.04)">
-          <div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:8px">⚠️ Aktif Kredi — ${b.ad||loanBankId}</div>
-          <div style="font-size:22px;font-weight:900;color:#ef4444;margin-bottom:4px">${cashFmt(borc)}</div>
-          <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">
-            <div style="display:flex;justify-content:space-between">
-              <span style="font-size:11px;color:var(--text-muted)">Yıllık faiz</span>
-              <b style="font-size:12px;color:var(--text)">%${((faiz)*100).toFixed(1)}</b>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="font-size:11px;color:var(--text-muted)">Haftalık faiz</span>
-              <b style="font-size:12px;color:#f59e0b">${cashFmt(weeklyFaiz)}</b>
-            </div>
-            <div style="display:flex;justify-content:space-between">
-              <span style="font-size:11px;color:var(--text-muted)">Toplam ödenecek</span>
-              <b style="font-size:12px;color:#ef4444">${cashFmt(borc + weeklyFaiz)}</b>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <button class="btn-success" style="font-size:12px" onclick="askBankOp('repay')">✅ Kısmen Öde</button>
-            <button class="btn-primary" style="font-size:12px" onclick="askBankOp('repayFull')">💯 Tamamını Öde</button>
-          </div>
-        </div>`;
-    }
-    for (const b of BANKALAR_LIST) {
-      const faiz = dbFaizler[b.id] || b.faiz;
-      const maxKredi = lv * b.krediMult;
-      const isMine = loanBankId === b.id && borc > 0;
-      const kalanLimit = isMine ? Math.max(0, maxKredi - borc) : maxKredi;
-      html += `
-        <div class="card mb-8" style="border-color:${isMine?b.renk+'44':'var(--border)'}">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <div style="width:40px;height:40px;border-radius:10px;background:${b.renk}22;display:flex;align-items:center;justify-content:center;font-size:20px">${b.emo}</div>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:var(--text)">${b.ad}${isMine?' <span style="font-size:9px;background:'+b.renk+';color:#fff;padding:1px 6px;border-radius:999px">AKTİF</span>':''}</div>
-              <div style="font-size:10px;color:var(--text-muted)">${b.tanim}</div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
-            <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
-              <div style="font-size:12px;font-weight:800;color:${b.renk}">%${(faiz*100).toFixed(1)}</div>
-              <div style="font-size:9px;color:var(--text-muted)">Faiz/Yıl</div>
-            </div>
-            <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
-              <div style="font-size:12px;font-weight:800">${cashFmt(maxKredi)}</div>
-              <div style="font-size:9px;color:var(--text-muted)">Max Limit</div>
-            </div>
-            <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
-              <div style="font-size:12px;font-weight:800;color:#16a34a">${cashFmt(kalanLimit)}</div>
-              <div style="font-size:9px;color:var(--text-muted)">Kalan</div>
-            </div>
-          </div>
-          <button class="btn-primary" style="width:100%;font-size:12px"
-            onclick="askKrediCek('${b.id}',${kalanLimit})"
-            ${kalanLimit<=0?'disabled style="width:100%;font-size:12px;opacity:.4"':''}>
-            💳 Kredi Çek${kalanLimit<=0?' (Limit Dolu)':''}
-          </button>
-        </div>`;
-    }
-
-  // ── VERGİLER SEKMESİ ──
-  } else if (activeTab === 'vergiler') {
-    const shops     = await dbGet('businesses/'+GZ.uid+'/shops') || {};
-    const gardens   = await dbGet('businesses/'+GZ.uid+'/gardens') || {};
-    const farms     = await dbGet('businesses/'+GZ.uid+'/farms') || {};
-    const factories = await dbGet('businesses/'+GZ.uid+'/factories') || {};
-    const mines     = await dbGet('businesses/'+GZ.uid+'/mines') || {};
-
-    const shopTax    = Object.keys(shops).length    * (mbRates.rates_shopTax    || 500);
-    const gardenTax  = Object.keys(gardens).length  * (mbRates.rates_gardenTax  || 300);
-    const farmTax    = Object.keys(farms).length    * (mbRates.rates_farmTax    || 300);
-    const factoryTax = Object.keys(factories).length * (mbRates.rates_factoryTax || 800);
-    const mineTax    = Object.keys(mines).length    * (mbRates.rates_mineTax    || 600);
-    const toplamSabit = shopTax + gardenTax + farmTax + factoryTax + mineTax;
-    const toplamHaftalik = toplamSabit + haftaVergi;
-
-    html += `
-      <div class="card mb-8" style="border-color:#f59e0b33;background:rgba(245,158,11,.03)">
-        <div style="font-size:13px;font-weight:700;color:#f59e0b;margin-bottom:10px">🏛️ Vergi Durumu</div>
-        <div style="margin-bottom:8px;padding:8px;background:rgba(245,158,11,.08);border-radius:8px">
-          <div style="font-size:10px;color:var(--text-muted)">Gelir Vergisi Oranı (her satıştan anında)</div>
-          <div style="font-size:20px;font-weight:900;color:#f59e0b">%${vergiOran}</div>
-        </div>
-        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Haftalık Sabit Vergiler</div>
-        <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">
-          ${[
-            [`🏪 Market (${Object.keys(shops).length} adet)`,     cashFmt(shopTax)],
-            [`🌱 Bahçe (${Object.keys(gardens).length} adet)`,    cashFmt(gardenTax)],
-            [`🐄 Çiftlik (${Object.keys(farms).length} adet)`,    cashFmt(farmTax)],
-            [`🏭 Fabrika (${Object.keys(factories).length} adet)`,cashFmt(factoryTax)],
-            [`⛏️ Maden (${Object.keys(mines).length} adet)`,      cashFmt(mineTax)],
-            [`📈 Haftalık Gelir Vergisi (%${vergiOran})`,          cashFmt(haftaVergi)],
-          ].map(([k,v])=>`<div style="display:flex;justify-content:space-between">
-            <span style="font-size:11px;color:var(--text-muted)">${k}</span>
-            <b style="font-size:12px">${v}</b>
-          </div>`).join('')}
-          <div style="border-top:1px solid var(--border);padding-top:6px;display:flex;justify-content:space-between">
-            <span style="font-size:12px;font-weight:700;color:var(--text)">TOPLAM (bu Cumartesi)</span>
-            <b style="font-size:13px;color:#f59e0b">${cashFmt(toplamHaftalik)}</b>
-          </div>
-        </div>
-        <button class="btn-primary" style="width:100%;font-size:12px" onclick="askBankOp('payTaxNow')">
-          🏛️ Vergiyi Şimdi Öde (${cashFmt(toplamHaftalik)})
-        </button>
-      </div>
-      <div class="card" style="background:rgba(239,68,68,.04);border-color:#ef444422">
-        <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:8px">⚠️ Ödenmezse Ne Olur?</div>
-        <div style="font-size:11px;color:var(--text-muted);line-height:1.7">
-          1. Borç hesabına eklenir<br>
-          2. Kredi notundan <b>-5 puan</b> düşer<br>
-          3. 2 hafta ödenmezse: <b>🔒 İhbarname</b><br>
-          4. 4 hafta: <b>⚖️ Haciz işlemi başlatılır</b><br>
-          5. Personeller satış yapamaz hale gelir
-        </div>
-      </div>`;
-
-  // ── PARA AKIŞI SEKMESİ ──
-  } else if (activeTab === 'akis') {
-    // Son 50 finans logu
-    const logSnap = await db.ref('financeLog').orderByChild('uid').equalTo(GZ.uid).limitToLast(50).once('value');
-    const logItems = [];
-    logSnap.forEach(s => logItems.unshift({ key: s.key, ...s.val() }));
-
-    const TIPLER = {
-      'shop-sale':          { lbl:'Market Satışı',    renk:'#22c55e', ok:true  },
-      'harvest':            { lbl:'Hasat',            renk:'#22c55e', ok:true  },
-      'crypto-sell':        { lbl:'Kripto Satış',     renk:'#22c55e', ok:true  },
-      'stock-sell':         { lbl:'Hisse Satış',      renk:'#22c55e', ok:true  },
-      'export':             { lbl:'İhracat',          renk:'#22c55e', ok:true  },
-      'player-market-sale': { lbl:'Oyuncu Pazar Sat.',renk:'#22c55e', ok:true  },
-      'borrow':             { lbl:'Kredi Çekme',      renk:'#f59e0b', ok:true  },
-      'bank-deposit':       { lbl:'Banka Yatırma',    renk:'#64748b', ok:false },
-      'bank-withdraw':      { lbl:'Banka Çekme',      renk:'#64748b', ok:true  },
-      'salary':             { lbl:'Maaş Ödemesi',     renk:'#ef4444', ok:false },
-      'repay':              { lbl:'Kredi Ödeme',      renk:'#ef4444', ok:false },
-      'weekly-payment':     { lbl:'Haftalık Kesinti', renk:'#ef4444', ok:false },
-      'crypto-buy':         { lbl:'Kripto Alım',      renk:'#ef4444', ok:false },
-      'stock-buy':          { lbl:'Hisse Alım',       renk:'#ef4444', ok:false },
-    };
-
-    html += `
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">📊 Son İşlemler</div>`;
-
-    if (!logItems.length) {
-      html += `<div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px">
-        Henüz kayıtlı işlem yok.<br><small>Satış yaptıkça burada görünür.</small>
-      </div>`;
-    } else {
-      for (const item of logItems) {
-        const tip = TIPLER[item.reason] || { lbl: item.reason||'?', renk:'#94a3b8', ok:true };
-        const ts = item.ts ? new Date(item.ts).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '?';
-        html += `
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-            <div style="width:36px;height:36px;border-radius:10px;background:${tip.renk}18;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
-              ${tip.ok?'📥':'📤'}
-            </div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:12px;font-weight:700;color:var(--text)">${tip.lbl}</div>
-              <div style="font-size:10px;color:var(--text-muted)">${ts}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:13px;font-weight:800;color:${tip.renk}">
-                ${tip.ok?'+':'−'}${cashFmt(item.net||item.gross||0)}
+      <!-- Banka kartları -->
+      <div style="font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Bankalar</div>
+      ${BLIST.map(b => {
+        const faiz   = dbFaizler[b.id] || b.faiz;
+        const isMine = loanBankId === b.id;
+        return `<div class="card mb-8" style="border-left:4px solid ${b.color}${isMine?'':'66'}">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:12px;background:${b.color}22;
+              display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${b.logo}</div>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:700;color:var(--text)">
+                ${b.name}${isMine ? ` <span style="font-size:9px;background:${b.color};color:#fff;padding:1px 6px;border-radius:999px">AKTİF KREDİ</span>` : ''}
               </div>
-              ${item.tax>0?`<div style="font-size:9px;color:#ef4444">vergi: −${cashFmt(item.tax)}</div>`:''}
+              <div style="font-size:10px;color:var(--text-muted)">${b.info || ''}</div>
             </div>
-          </div>`;
-      }
+            <div style="text-align:right">
+              <div style="font-size:10px;color:var(--text-muted)">FAİZ</div>
+              <div style="font-size:14px;font-weight:800;color:${b.color}">%${(faiz * 100).toFixed(1)}</div>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}`;
+  }
+
+  /* ══════════════ KREDİ SEKMESİ ══════════════ */
+  else if (activeTab === 'kredi') {
+    if (typeof renderKredi === 'function') {
+      renderKredi();
+      return; // renderKredi kendi main.innerHTML'ini set ediyor
     }
   }
 
-  main.innerHTML = html;
+  /* ══════════════ VADELİ SEKMESİ ══════════════ */
+  else if (activeTab === 'vadeli') {
+    const vadeli = (await dbGet('vadeli/' + uid)) || {};
+    const list   = Object.entries(vadeli);
+    content = list.length === 0
+      ? `<div class="card" style="text-align:center;padding:32px;color:var(--text-muted)">
+           <div style="font-size:36px;margin-bottom:8px">📈</div>
+           Aktif vadeli hesabınız yok<br>
+           <button class="btn-primary" style="margin-top:16px" onclick="renderBankaSekme('kredi')">Vadeli Aç</button>
+         </div>`
+      : list.map(([k, v]) => `
+          <div class="card mb-8">
+            <div style="font-weight:700">${v.bankName || v.bankId} — Vadeli Hesap</div>
+            <div style="font-size:12px;color:var(--text-muted)">
+              Miktar: <b>${cashFmt(v.amount)}</b> · Faiz: <b>%${(v.rate * 100).toFixed(1)}</b>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted)">
+              Bitiş: ${new Date(v.maturesAt).toLocaleDateString('tr-TR')}
+            </div>
+          </div>`).join('');
+  }
+
+  /* ══════════════ TRANSFER SEKMESİ ══════════════ */
+  else if (activeTab === 'transfer') {
+    content = `
+      <div class="card">
+        <div style="font-size:14px;font-weight:700;margin-bottom:12px">💸 Oyuncu Transferi</div>
+        <input id="tfUser" placeholder="Kullanıcı adı" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;margin-bottom:8px">
+        <input id="tfAmount" type="number" placeholder="Miktar (₺)" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;margin-bottom:12px">
+        <button onclick="(async()=>{
+          const uname=document.getElementById('tfUser')?.value?.trim();
+          const amt=parseInt(document.getElementById('tfAmount')?.value)||0;
+          if(!uname||!amt) return toast('Kullanıcı adı ve miktar girin','warn');
+          const users=await dbGet('users')||{};
+          const found=Object.entries(users).find(([,u])=>u.username===uname);
+          if(!found) return toast('Kullanıcı bulunamadı','error');
+          await window.GZX_B09_transfer?.(GZ.uid,found[0],amt);
+          renderBankaSekme('transfer');
+        })()" class="btn-primary" style="width:100%">Transfer Gönder</button>
+      </div>`;
+  }
+
+  main.innerHTML = `
+    <div class="page-title">🏦 Bankacılık</div>
+    ${tabBar}
+    <div id="bankaContent">${content}</div>`;
 }
+window.renderBankaSekme = renderBankaSekme;
+
+
 
 
 function getNextSaturday(){
@@ -1300,11 +1145,11 @@ async function askKrediCek(bankId, maxLimit){
   const b = BANKALAR_MAP[bankId];
   if (!b) return;
   if (maxLimit <= 0) return toast(`Kredi limitiniz dolu. Önce borcunuzu ödeyin.`, 'warn');
-  showModal(`💳 ${b.ad} — Kredi Çek`, `
-    <div style="background:${b.renk}11;border-radius:12px;padding:12px;margin-bottom:14px">
+  showModal(`💳 ${b.name || (b.name || b.ad)} — Kredi Çek`, `
+    <div style="background:${b.color || b.color || b.color || b.renk}11;border-radius:12px;padding:12px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
         <span style="font-size:12px;color:var(--text-muted)">Faiz Oranı (yıllık)</span>
-        <b style="color:${b.renk}">%${(b.faiz*100).toFixed(1)}</b>
+        <b style="color:${b.color || b.color || b.color || b.renk}">%${(b.faiz*100).toFixed(1)}</b>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
         <span style="font-size:12px;color:var(--text-muted)">Haftalık faiz (1000₺ için)</span>
@@ -1348,19 +1193,19 @@ async function bankBorrowFromBank(bankId, amount){
   const b = BANKALAR_MAP[bankId];
   if (!b) return;
   const lv = (GZ.data.level||1);
-  const max = lv * b.krediMult;
+  const max = lv * Math.floor((b.maxKat || 2) * (window.getKrediLimit ? window.getKrediLimit(GZ.data?.krediNotu||50) : 5000));
   const cur = (await dbGet(`bank/${GZ.uid}/loan`))||0;
   const curBankId = (await dbGet(`bank/${GZ.uid}/loanBankId`));
   // Farklı bankadan borç alıyorsa önce eski borç ödenmeli
   if (curBankId && curBankId !== bankId && cur > 0){
-    return toast(`Önce ${BANKALAR_MAP[curBankId]?.ad||curBankId} borcunuzu ödeyin!`, 'warn');
+    return toast(`Önce ${BANKALAR_MAP[curBankId]?.name || BANKALAR_MAP[curBankId]?.ad||curBankId} borcunuzu ödeyin!`, 'warn');
   }
   if (cur + amount > max) return toast(`Kredi limitiniz: ${cashFmt(max)} (Mevcut borç: ${cashFmt(cur)})`, 'warn');
   await db.ref(`bank/${GZ.uid}/loan`).transaction(c => (c||0)+amount);
   await db.ref(`bank/${GZ.uid}/loanBankId`).set(bankId);
   await addCash(GZ.uid, amount, 'borrow');
-  await pushNotif(GZ.uid, `💳 ${b.ad}'dan ${cashFmt(amount)} kredi çekildi. Haftalık faiz: ${cashFmt(+(amount*b.faiz/52).toFixed(2))}`);
-  toast(`+${cashFmt(amount)} kredi çekildi — ${b.ad}`, 'success');
+  await pushNotif(GZ.uid, `💳 ${b.name || b.name || b.ad}'dan ${cashFmt(amount)} kredi çekildi. Haftalık faiz: ${cashFmt(+(amount*b.faiz/52).toFixed(2))}`);
+  toast(`+${cashFmt(amount)} kredi çekildi — ${b.name || b.ad}`, 'success');
 }
 window.bankBorrowFromBank = bankBorrowFromBank;
 

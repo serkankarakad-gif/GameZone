@@ -536,7 +536,7 @@ window.bankRepay = bankRepay;
    YALNIZCA REYONA ÜRÜN EKLENMİŞSE SATIŞ OLUR (kafasına göre satış YOK)
    ============================================================ */
 async function initMarketSalesEngine(){
-  setInterval(processSales, 90000); // her 90 sn
+  setInterval(processSales, 180000); // her 3 dakika (daha gerçekçi satış hızı)
   setTimeout(processSales, 7000);
 }
 
@@ -573,7 +573,9 @@ async function processSales(){
       const since = now() - (shop.createdAt||now());
       const opening = since < 24*3600*1000 ? 5 : 1;
 
-      const baseRate = 6 * demandFactor * opening * (shop.level||1);
+      // Gerçekçi satış hızı: normal fiyatta saatte ~28 ürün (0.7/tick * 40tick/saat)
+      // 90sn'de bir tick = saatte 40 tick → 0.7 * 40 = 28 ürün/saat (normal fiyat)
+      const baseRate = 0.7 * demandFactor * opening * (shop.level||1);
       const sold = Math.min(sh.stock, Math.floor(baseRate * (0.7 + Math.random()*0.6)));
       if (sold <= 0) continue;
 
@@ -588,7 +590,7 @@ async function processSales(){
     if (totalSale > 0){
       // Para ekle, XP ekle
       await addCash(GZ.uid, totalSale, 'shop-sale');
-      await addXP(GZ.uid, Math.floor(totalSale/50));
+      await addXP(GZ.uid, Math.floor(totalSale/500)); // Satış XP'si dengelendi
       await db.ref(`businesses/${GZ.uid}/shops`).update(updates);
     }
   }
