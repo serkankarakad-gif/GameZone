@@ -1,1310 +1,612 @@
-/* ==========================================================================
-   system-logic.js — GameZone ERP: 200 Madde Şartneme Entegrasyonu
+/* ============================================================================
+   system-logic.js — GameZone ERP: Sistem Mantığı & Bağlantı Köprüsü
    ─────────────────────────────────────────────────────────────────────────
-   Bu dosya mevcut 10 dosyayı DEĞİŞTİRMEZ; onların üzerine katman olarak
-   eklenir. index.html'de admin-panel.js'in hemen ALTINA ekleyin:
-       <script src="system-logic.js"></script>
-
-   BÖLÜMLER:
-     SL1  — Siyasi & İdari Yapı (Maddeler 1-40)
-     SL2  — Adalet & Emniyet     (Maddeler 41-80)
-     SL3  — Ekonomi, SGK, Ticaret(Maddeler 81-130)
-     SL4  — Savunma & Teknoloji  (Maddeler 131-170)
-     SL5  — Medya & Kriz         (Maddeler 171-200)
-   ========================================================================== */
-
+   Bu dosya; admin-panel.js, ekonomi.js ve diğer modüller arasındaki
+   köprü fonksiyonlarını sağlar. Ayrıca eksik global fonksiyonları tanımlar.
+   ============================================================================ */
 'use strict';
 
 /* ══════════════════════════════════════════════════════════════════════════
-   GLOBAL NAMESPACE
+   1. CANLI VERİ GÜNCELLEME — DİJİTAL CÜZDAN TOPBAR
    ══════════════════════════════════════════════════════════════════════════ */
-window.SL = {
-  iller: [],
-  currentUser: null,       // GZ.data kopyası (extend edilmiş)
-  systemReady: false,
-  offListeners: [],        // temizlik için
-};
+(function watchWallet() {
+  const _wait = setInterval(function () {
+    if (!window.db || !window.GZ?.uid) return;
+    clearInterval(_wait);
 
-/* ─── 81 İl Listesi (Madde 1) ─── */
-window.ILLER_LIST = [
-  "Adana","Adıyaman","Afyonkarahisar","Ağrı","Amasya","Ankara","Antalya","Artvin",
-  "Aydın","Balıkesir","Bilecik","Bingöl","Bitlis","Bolu","Burdur","Bursa","Çanakkale",
-  "Çankırı","Çorum","Denizli","Diyarbakır","Edirne","Elazığ","Erzincan","Erzurum",
-  "Eskişehir","Gaziantep","Giresun","Gümüşhane","Hakkari","Hatay","Isparta","Mersin",
-  "İstanbul","İzmir","Kars","Kastamonu","Kayseri","Kırklareli","Kırşehir","Kocaeli",
-  "Konya","Kütahya","Malatya","Manisa","Kahramanmaraş","Mardin","Muğla","Muş",
-  "Nevşehir","Niğde","Ordu","Rize","Sakarya","Samsun","Siirt","Sinop","Sivas",
-  "Tekirdağ","Tokat","Trabzon","Tunceli","Şanlıurfa","Uşak","Van","Yozgat",
-  "Zonguldak","Aksaray","Bayburt","Karaman","Kırıkkale","Batman","Şırnak","Bartın",
-  "Ardahan","Iğdır","Yalova","Karabük","Kilis","Osmaniye","Düzce"
-];
+    // Kullanıcı verisini gerçek zamanlı dinle
+    window.db.ref('users/' + window.GZ.uid).on('value', function (snap) {
+      const d = snap.val();
+      if (!d) return;
+      window.GZ.data = d;
 
-/* ──────────────────────────────────────────────────────────────────────────
-   BAŞLATICI — GZ hazır olduğunda çağrılır
-   ────────────────────────────────────────────────────────────────────────── */
-window.initSystemLogic = async function () {
-  if (SL.systemReady) return;
-  SL.systemReady = true;
+      // Topbar güncelle
+      const fmt = window.cashFmt || (n => (n || 0).toLocaleString('tr-TR') + ' ₺');
 
-  await SL1_initPolitics();
-  await SL2_initJustice();
-  await SL3_initEconomyExtensions();
-  await SL4_initDefense();
-  await SL5_initMediaCrisis();
+      const cashEl = document.getElementById('cashTxt');
+      const diaEl = document.getElementById('diaTxt');
+      const lvlEl = document.getElementById('lvlPill');
+      const xpFill = document.getElementById('xpFill');
+      const xpText = document.getElementById('xpText');
 
-  console.log('[SL] system-logic.js hazır — 200 madde aktif');
-};
+      if (cashEl) cashEl.textContent = fmt(d.money || 0);
+      if (diaEl) diaEl.textContent = (d.diamonds || 0);
+      if (lvlEl) lvlEl.textContent = 'Lv ' + (d.level || 1);
 
-/* giris.js'deki enterGame local fonksiyon olduğu için doğrudan sarmalamak mümkün değil.
-   Bunun yerine GZ.uid'nin set edilmesini polling ile izliyoruz. */
-(function waitForGZ() {
-  const check = setInterval(() => {
-    if (window.GZ && window.GZ.uid && window.GZ.data) {
-      clearInterval(check);
-      setTimeout(() => window.initSystemLogic(), 1000);
-    }
+      if (xpFill || xpText) {
+        const xpFn = window.xpForLevel || (lv => lv * 1000);
+        const need = xpFn(d.level || 1);
+        const pct = Math.min(100, Math.floor(((d.xp || 0) / need) * 100));
+        if (xpFill) xpFill.style.width = pct + '%';
+        if (xpText) xpText.textContent = (d.xp || 0) + '/' + need;
+      }
+
+      // Robot raporu bildirimi
+      if (d.robotReport && d.robotReport.lastRun > Date.now() - 60000) {
+        const rr = d.robotReport;
+        if (rr.msg && typeof window.toast === 'function' && !window._robotReportShown) {
+          window._robotReportShown = true;
+          setTimeout(() => {
+            window.toast('🤖 Robot Raporu: ' + rr.msg, 'info', 8000);
+            window._robotReportShown = false;
+          }, 3000);
+        }
+      }
+    });
+
+    // Bildirimler (rozetler)
+    window.db.ref('notifs/' + window.GZ.uid).orderByChild('read').equalTo(false).on('value', function (snap) {
+      let count = 0;
+      snap.forEach(() => count++);
+      const badge = document.getElementById('notifBadge');
+      if (badge) {
+        badge.style.display = count > 0 ? 'flex' : 'none';
+        badge.textContent = count > 9 ? '9+' : count;
+      }
+    });
+
   }, 500);
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════
-   SL1 — SİYASİ VE İDARİ YAPI (Maddeler 1-40)
+   2. KİMLİK KARTI SİSTEMİ (Muhtarlık)
    ══════════════════════════════════════════════════════════════════════════ */
-async function SL1_initPolitics() {
+window.SL_applyIdCard = async function () {
+  if (!window.GZ?.uid) return window.toast?.('Giriş yap!', 'error');
 
-  /* Madde 1: 81 İl Sistemi — kayıtta il seçimi */
-  window.SL1_getProvinceSelect = function () {
-    return `<select id="slProvinceSelect" class="sl-input">
-      ${ILLER_LIST.map(il => `<option value="${il}">${il}</option>`).join('')}
-    </select>`;
-  };
+  const uid = window.GZ.uid;
+  const userData = window.GZ.data || {};
 
-  /* Kullanıcı kaydolurken il seçimi yoksa İstanbul ata */
-  window.SL1_ensureProvince = async function (uid) {
-    const cur = await dbGet(`users/${uid}/province`);
-    if (!cur) {
-      await dbUpdate(`users/${uid}`, { province: 'İstanbul' });
-    }
-  };
-
-  /* Madde 2: Muhtarlık Oylama Sistemi */
-  window.SL1_voteMuhtar = async function (uid, province, neighbourhood, candidateUid) {
-    const path = `politics/${province}/mahalle/${neighbourhood}/muhtar`;
-    const existing = await dbGet(`${path}/votes/${uid}`);
-    if (existing) return window.toast?.('Zaten oy kullandınız', 'warn');
-    await dbUpdate(`${path}/votes`, { [uid]: candidateUid });
-    await dbUpdate(`${path}/count/${candidateUid}`,
-      { votes: firebase.database.ServerValue.increment(1) });
-    window.toast?.('✅ Oyunuz kaydedildi', 'success');
-  };
-
-  /* Madde 3: Belediye Başkanlığı — il bütçesini yönet */
-  window.SL1_getMayorBudget = async function (province) {
-    return (await dbGet(`politics/${province}/budget`)) || 0;
-  };
-  window.SL1_allocateBudget = async function (province, amount, category) {
-    const mayorUid = await dbGet(`politics/${province}/mayor`);
-    if (mayorUid !== GZ.uid) return window.toast?.('Yetkiniz yok', 'error');
-    const budget = await SL1_getMayorBudget(province);
-    if (budget < amount) return window.toast?.('Yetersiz belediye bütçesi', 'error');
-    await db.ref(`politics/${province}/budget`).transaction(b => Math.max(0, (b || 0) - amount));
-    await dbPush(`politics/${province}/expenditures`, {
-      amount, category, by: GZ.uid, ts: Date.now()
-    });
-    window.toast?.(`🏛️ ${cashFmt(amount)} ${category} için ayrıldı`, 'success');
-  };
-
-  /* Madde 4: Milletvekilliği — oylama + dokunulmazlık */
-  window.SL1_votelaw = async function (lawId, vote) {
-    const law = await dbGet(`parliament/laws/${lawId}`);
-    if (!law) return;
-    await dbUpdate(`parliament/laws/${lawId}/votes`, { [GZ.uid]: vote });
-    window.toast?.(`🗳️ Oy verildi: ${vote === 1 ? 'Evet' : 'Hayır'}`, 'success');
-  };
-  window.SL1_hasImmunity = async function (uid) {
-    return !!(await dbGet(`users/${uid}/parlamentoDokunulmazlik`));
-  };
-
-  /* Madde 5: Cumhurbaşkanlığı Paneli — vergi, asgari ücret, dış ticaret */
-  window.SL1_presidentialAction = async function (action, value) {
-    const presUid = await dbGet('system/president');
-    if (presUid !== GZ.uid && !(GZ.data?.isFounder)) {
-      return window.toast?.('Sadece Cumhurbaşkanı kullanabilir', 'error');
-    }
-    if (action === 'setMinWage') {
-      await dbSet('system/minWage', Number(value));
-      await SL1_broadcastResmiGazete(`📋 Asgari ücret ${cashFmt(value)} olarak belirlendi`);
-    } else if (action === 'setExportTax') {
-      await dbUpdate('system/trade', { exportTaxRate: Number(value) / 100 });
-      await SL1_broadcastResmiGazete(`🚢 İhracat vergisi %${value} olarak güncellendi`);
-    } else if (action === 'setImportTax') {
-      await dbUpdate('system/trade', { importTaxRate: Number(value) / 100 });
-      await SL1_broadcastResmiGazete(`🛳️ İthalat vergisi %${value} olarak güncellendi`);
-    }
-    window.toast?.('✅ Cumhurbaşkanlığı kararı uygulandı', 'success');
-  };
-
-  /* Madde 6: GZ-MER Bildirim Sistemi — şikayet paneli */
-  window.SL1_submitComplaint = async function (targetUid, reason, details) {
-    if (!GZ.uid) return;
-    const ref = await dbPush('complaints', {
-      from: GZ.uid,
-      fromUsername: GZ.data?.username,
-      target: targetUid,
-      reason,
-      details: (details || '').slice(0, 500),
-      status: 'pending',
-      ts: Date.now()
-    });
-    await SL1_notifyOfficials(`⚠️ Yeni şikayet: ${reason}`);
-    window.toast?.('📮 Şikayetiniz iletildi', 'success');
-    return ref.key;
-  };
-
-  /* Madde 7: Azil Mekanizması */
-  window.SL1_dismissOfficial = async function (targetUid, role, province) {
-    const complaints = await dbGet('complaints');
-    const count = Object.values(complaints || {}).filter(
-      c => c.target === targetUid && c.status === 'upheld'
-    ).length;
-    if (count < 3) return window.toast?.('Azil için en az 3 onaylanmış şikayet gerekli', 'warn');
-    const updates = {};
-    if (role === 'mayor') updates[`politics/${province}/mayor`] = null;
-    if (role === 'mp') updates[`users/${targetUid}/milletvekili`] = false;
-    if (role === 'governor') updates[`politics/${province}/vali`] = null;
-    await db.ref('/').update(updates);
-    await dbUpdate(`users/${targetUid}`, { dismissedAt: Date.now(), dismissedRole: role });
-    await SL1_broadcastResmiGazete(`🔔 ${role} görevinden alındı`);
-    window.toast?.('✅ Azil işlemi tamamlandı', 'success');
-  };
-
-  /* Madde 8: Resmi Gazete — push bildirimi */
-  window.SL1_broadcastResmiGazete = async function (message) {
-    const key = db.ref('resmiGazete').push().key;
-    await db.ref(`resmiGazete/${key}`).set({
-      message,
-      ts: Date.now(),
-      read: false
-    });
-    /* UI toast (tüm oturum açık kullanıcılar için) */
-    db.ref('resmiGazete').limitToLast(1).on('child_added', snap => {
-      const d = snap.val();
-      if (!d || (Date.now() - d.ts) > 5000) return;
-      window.toast?.(`📰 Resmi Gazete: ${d.message}`, 'info', 6000);
-    });
-  };
-
-  /* Madde 9: İl Sınırları — oyuncu sadece kendi ilinde dükkan açabilir */
-  window.SL1_canOpenShopInProvince = async function (uid, targetProvince) {
-    const userProv = await dbGet(`users/${uid}/province`);
-    return userProv === targetProvince;
-  };
-
-  /* Madde 10: Gümrük Noktaları — iller arası mal ticaretinde geçiş harcı */
-  window.SL1_applyCustomsDuty = async function (fromProvince, toProvince, amount) {
-    if (fromProvince === toProvince) return amount;
-    const rate = (await dbGet('system/customsDutyRate')) || 0.05; // varsayılan %5
-    const duty = +(amount * rate).toFixed(2);
-    await db.ref('system/customsRevenue').transaction(c => (c || 0) + duty);
-    return +(amount - duty).toFixed(2);
-  };
-
-  /* Madde 11-20: Meclis oylama botları + Parti kurma */
-  window.SL1_createParty = async function (name, ideology, logo) {
-    const existing = await dbGet(`parties/${name.toLowerCase().replace(/\s/g, '_')}`);
-    if (existing) return window.toast?.('Bu isimde parti mevcut', 'error');
-    const cost = 50000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.(`Parti kurmak için ${cashFmt(cost)} gerekli`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0, (m||0) - cost));
-    await dbSet(`parties/${name.toLowerCase().replace(/\s/g, '_')}`, {
-      name, ideology, logo, leader: GZ.uid,
-      members: { [GZ.uid]: 'leader' },
-      createdAt: Date.now(), treasury: 0
-    });
-    await dbUpdate(`users/${GZ.uid}`, { party: name, partyRole: 'leader' });
-    window.toast?.(`🏛️ ${name} partisi kuruldu!`, 'success');
-  };
-
-  /* Madde 21-30: Şehir mutluluk endeksi */
-  window.SL1_getCityHappiness = async function (province) {
-    return (await dbGet(`politics/${province}/happiness`)) || 50;
-  };
-  window.SL1_updateCityHappiness = async function (province, delta) {
-    await db.ref(`politics/${province}/happiness`).transaction(h => {
-      return Math.min(100, Math.max(0, (h || 50) + delta));
-    });
-  };
-
-  /* Madde 31-40: Valilik atamaları */
-  window.SL1_appointGovernor = async function (province, candidateUid) {
-    const presUid = await dbGet('system/president');
-    if (presUid !== GZ.uid && !GZ.data?.isFounder) {
-      return window.toast?.('Yalnızca Cumhurbaşkanı vali atayabilir', 'error');
-    }
-    await dbUpdate(`politics/${province}`, { vali: candidateUid });
-    await dbUpdate(`users/${candidateUid}`, { vali: province });
-    await SL1_broadcastResmiGazete(`🏛️ ${province} valisi atandı`);
-    window.toast?.('✅ Vali atandı', 'success');
-  };
-
-  window.SL1_notifyOfficials = async function (msg) {
-    const president = await dbGet('system/president');
-    if (president) {
-      await dbPush(`users/${president}/notifications`, { msg, ts: Date.now(), read: false });
-    }
-  };
-
-  /* Render: GZ-MER Şikayet Paneli */
-  window.SL1_renderComplaintsUI = async function (container) {
-    const complaints = await dbGet('complaints') || {};
-    const list = Object.entries(complaints)
-      .sort(([, a], [, b]) => b.ts - a.ts)
-      .slice(0, 20);
-    container.innerHTML = `
-      <div class="sl-panel">
-        <h3>📮 GZ-MER Şikayet Paneli</h3>
-        <div class="sl-form">
-          <input id="slComplaintTarget" placeholder="Hedef kullanıcı adı" class="sl-input">
-          <select id="slComplaintReason" class="sl-input">
-            <option>Rüşvet</option><option>Görevi İstismar</option>
-            <option>Hukuka Aykırı Karar</option><option>Diğer</option>
-          </select>
-          <textarea id="slComplaintDetails" placeholder="Açıklama (maks. 500 karakter)" class="sl-input" rows="3"></textarea>
-          <button class="btn-primary" onclick="SL1_submitComplaintUI()">📮 Şikayet Gönder</button>
+  // Zaten varsa göster
+  if (userData.idCard) {
+    const ic = userData.idCard;
+    window.showModal?.('🪪 Kimlik Kartın', `
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0d1a2e);border-radius:16px;padding:24px;border:2px solid #3b82f6;max-width:360px;margin:0 auto">
+        <div style="text-align:center;margin-bottom:16px">
+          <div style="font-size:32px">🇹🇷</div>
+          <div style="color:#f59e0b;font-weight:900;font-size:16px;letter-spacing:2px">GAMEZONE CUMHURİYETİ</div>
+          <div style="color:#94a3b8;font-size:11px">KİMLİK KARTI</div>
         </div>
-        <div class="sl-list">
-          ${list.map(([id, c]) => `
-            <div class="sl-item">
-              <span>${c.fromUsername || 'Anonim'}</span> →
-              <b>${c.target?.slice(0,8)}</b>: ${c.reason}
-              <span class="sl-badge sl-${c.status}">${c.status}</span>
-            </div>
-          `).join('') || '<p class="sl-empty">Şikayet yok</p>'}
+        <div style="display:grid;gap:10px;font-size:13px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Ad Soyad</span><span style="color:#e2e8f0;font-weight:700">${window.esc?.(ic.fullName || userData.username) || (ic.fullName || userData.username)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#64748b">TC No</span><span style="color:#60a5fa;font-family:monospace">${ic.tcNo || '-'}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#64748b">İl</span><span style="color:#e2e8f0">${ic.province || userData.province || '-'}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Veriliş</span><span style="color:#e2e8f0">${new Date(ic.issuedAt || Date.now()).toLocaleDateString('tr-TR')}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Durum</span><span style="color:#22c55e;font-weight:700">✅ GEÇERLİ</span></div>
         </div>
-      </div>`;
-  };
-  window.SL1_submitComplaintUI = async function () {
-    const target = document.getElementById('slComplaintTarget')?.value.trim();
-    const reason = document.getElementById('slComplaintReason')?.value;
-    const details = document.getElementById('slComplaintDetails')?.value;
-    if (!target || !reason) return window.toast?.('Hedef ve sebep zorunlu', 'error');
-    const targetUid = await dbGet(`usernames/${target.toLowerCase()}`);
-    if (!targetUid) return window.toast?.('Kullanıcı bulunamadı', 'error');
-    await window.SL1_submitComplaint(targetUid, reason, details);
-  };
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   SL2 — ADALET VE EMNİYET (Maddeler 41-80)
-   ══════════════════════════════════════════════════════════════════════════ */
-async function SL2_initJustice() {
-
-  /* Madde 41: Polis Akademisi — sınav + admin onayı */
-  window.SL2_applyPoliceAcademy = async function () {
-    if (GZ.data?.criminalRecord > 0) {
-      return window.toast?.('Sabıka kaydı olanlar başvuramaz', 'error');
-    }
-    await dbPush('policeApplications', {
-      uid: GZ.uid,
-      username: GZ.data?.username,
-      status: 'pending',
-      ts: Date.now()
-    });
-    window.toast?.('👮 Başvurunuz alındı, admin onayı bekleniyor', 'info');
-  };
-
-  window.SL2_approvePolice = async function (appId, candidateUid) {
-    if (!GZ.data?.isFounder && !GZ.data?.isAdmin) {
-      return window.toast?.('Yetkisiz işlem', 'error');
-    }
-    await dbUpdate(`policeApplications/${appId}`, { status: 'approved' });
-    await dbUpdate(`users/${candidateUid}`, {
-      role: 'police',
-      policeRank: 'Memur',
-      salary: 8000,
-      canOpenShop: false   // Madde 44: Ticaret yasağı
-    });
-    window.toast?.('✅ Polis onaylandı', 'success');
-  };
-
-  /* Madde 42: Savcılık Paneli */
-  window.SL2_openCase = async function (suspectUid, evidence, charge) {
-    if (GZ.data?.role !== 'prosecutor') {
-      return window.toast?.('Yetkisiz: Savcı değilsiniz', 'error');
-    }
-    const caseRef = await dbPush('court/cases', {
-      prosecutor: GZ.uid,
-      suspect: suspectUid,
-      charge,
-      evidence: evidence.slice(0, 1000),
-      status: 'open',
-      verdict: null,
-      openedAt: Date.now()
-    });
-    window.toast?.('⚖️ Dava açıldı: ' + caseRef.key, 'success');
-    return caseRef.key;
-  };
-
-  /* Madde 43: Hakimlik Paneli */
-  window.SL2_giveVerdict = async function (caseId, verdict, fine, jailDays) {
-    if (GZ.data?.role !== 'judge') {
-      return window.toast?.('Yetkisiz: Hakim değilsiniz', 'error');
-    }
-    const courtCase = await dbGet(`court/cases/${caseId}`);
-    if (!courtCase || courtCase.status !== 'open') {
-      return window.toast?.('Dava bulunamadı veya kapalı', 'error');
-    }
-    await dbUpdate(`court/cases/${caseId}`, {
-      verdict, fine: fine || 0, jailDays: jailDays || 0,
-      status: 'closed', closedAt: Date.now(), judge: GZ.uid
-    });
-
-    if (verdict === 'guilty') {
-      const sus = courtCase.suspect;
-      if (fine > 0) {
-        await db.ref(`users/${sus}/money`).transaction(m =>
-          Math.max(0, (m || 0) - fine));
-        await db.ref(`users/${GZ.uid}/money`).transaction(m => (m || 0) + fine);
-      }
-      if (jailDays > 0) {
-        await SL2_sendToJail(sus, jailDays);
-      }
-      /* Madde 49: Sabıka kaydı */
-      await db.ref(`users/${sus}/criminalRecord`).transaction(c => (c || 0) + 1);
-    }
-    window.toast?.(`⚖️ Karar verildi: ${verdict}`, 'success');
-  };
-
-  /* Madde 44: Ticaret Yasağı — memurlar dükkan açamaz
-     ekonomi.js'deki dükkan açma fonksiyonunu sarmala */
-  const _origOpenShop = window.openShop;
-  window.openShop = async function (...args) {
-    const role = GZ.data?.role;
-    if (['police', 'prosecutor', 'judge', 'soldier'].includes(role)) {
-      return window.toast?.('⛔ Memurlar dükkan açamaz (Madde 44)', 'error');
-    }
-    if (GZ.data?.canOpenShop === false) {
-      return window.toast?.('⛔ Ticaret yetkiniz kısıtlanmış', 'error');
-    }
-    if (_origOpenShop) return _origOpenShop(...args);
-  };
-
-  /* Madde 45: Memur Maaş Katsayısı */
-  window.SL2_payOfficerSalaries = async function () {
-    const snap = await db.ref('users').orderByChild('role').equalTo('police').once('value');
-    const updates = {};
-    const minWage = (await dbGet('system/minWage')) || 17002;
-    const katsayi = (await dbGet('system/officerSalaryCoeff')) || 2.5;
-    snap.forEach(s => {
-      const u = s.val();
-      const salary = +(minWage * katsayi).toFixed(2);
-      updates[`users/${s.key}/money`] = firebase.database.ServerValue.increment(salary);
-      updates[`users/${s.key}/lastSalaryAt`] = Date.now();
-    });
-    if (Object.keys(updates).length > 0) {
-      await db.ref('/').update(updates);
-    }
-  };
-
-  /* Madde 46: Ceza Primi — her cezadan polise %5 */
-  window.SL2_issueFine = async function (targetUid, amount, officerUid, reason) {
-    const balance = await dbGet(`users/${targetUid}/money`);
-    if (balance < amount) return window.toast?.('Ceza ödenemez, yetersiz bakiye', 'warn');
-
-    const officerCut = +(amount * 0.05).toFixed(2);
-    const stateShare = +(amount - officerCut).toFixed(2);
-
-    await db.ref(`users/${targetUid}/money`).transaction(m => Math.max(0, (m||0) - amount));
-    await db.ref(`users/${officerUid}/money`).transaction(m => (m||0) + officerCut);
-
-    const authorityUid = await dbGet('system/authorityUid');
-    if (authorityUid) {
-      await db.ref(`users/${authorityUid}/money`).transaction(m => (m||0) + stateShare);
-    }
-
-    await dbPush(`users/${targetUid}/fines`, {
-      amount, reason, issuedBy: officerUid, ts: Date.now()
-    });
-    window.toast?.(`💰 Ceza kesildi: ${cashFmt(amount)} (Polis payı: ${cashFmt(officerCut)})`, 'success');
-  };
-
-  /* Madde 47: Gerçek İsimli NPC Botlar — suç sistemi */
-  const BOT_NAMES = [
-    'Ahmet Yılmaz','Mehmet Kaya','Ayşe Demir','Fatma Çelik','Ali Öztürk',
-    'Zeynep Arslan','Mustafa Şahin','Emine Doğan','Hüseyin Aydın','Hatice Yıldız'
-  ];
-  window.SL2_spawnCrimeBot = function () {
-    const crime = ['hırsızlık','soygun','dolandırıcılık','darp'][Math.floor(Math.random()*4)];
-    const bot = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-    const province = ILLER_LIST[Math.floor(Math.random() * ILLER_LIST.length)];
-    const event = { bot, crime, province, ts: Date.now() };
-    dbPush('crimeLog', event);
-    /* Madde 48: Telsiz anonsu — polisin ekranına düş */
-    db.ref('policeRadio').push({
-      message: `📻 ${province} — ${bot} şüphelisi: ${crime}`,
-      ts: Date.now()
-    });
-  };
-
-  /* Bot döngüsü: 5-15 dakika arasında rastgele */
-  (function scheduleBotCrime() {
-    const delay = (5 + Math.random() * 10) * 60 * 1000;
-    setTimeout(async () => {
-      window.SL2_spawnCrimeBot();
-      scheduleBotCrime();
-    }, delay);
-  })();
-
-  /* Polis telsizi dinleyici */
-  if (GZ.data?.role === 'police') {
-    db.ref('policeRadio').limitToLast(1).on('child_added', snap => {
-      const d = snap.val();
-      if (!d || Date.now() - d.ts > 10000) return;
-      window.toast?.(`📻 TELSİZ: ${d.message}`, 'warn', 8000);
-    });
+      </div>
+    `);
+    return;
   }
 
-  /* Madde 49: Sabıka Kaydı — ticaret/memurluk kısıtlaması */
-  window.SL2_checkCriminalRecord = async function (uid) {
-    const record = (await dbGet(`users/${uid}/criminalRecord`)) || 0;
-    if (record >= 3) {
-      await dbUpdate(`users/${uid}`, {
-        tradeRestricted: true,
-        govJobRestricted: true
-      });
-    }
-    return record;
-  };
+  // Ücret kontrolü
+  const fee = (await window.db?.ref('system/idCardFee').once('value').then(s => s.val())) || 500;
+  const money = userData.money || 0;
 
-  /* Madde 50: Hapishane Modu */
-  window.SL2_sendToJail = async function (uid, days) {
-    const releaseAt = Date.now() + days * 24 * 3600 * 1000;
-    await dbUpdate(`users/${uid}`, {
-      inJail: true,
-      jailReleaseAt: releaseAt,
-      jailDays: days
-    });
-    if (uid === GZ.uid) {
-      SL2_activateJailScreen(releaseAt);
-    }
-  };
-
-  window.SL2_activateJailScreen = function (releaseAt) {
-    const root = document.getElementById('mainGameScreen');
-    if (!root) return;
-    root.innerHTML = `
-      <div class="sl-jail-screen">
-        <div class="sl-jail-cell">🔒</div>
-        <h2>TUTUKLUSUNUZ</h2>
-        <p>Hakimin verdiği ceza infaz edilmektedir.</p>
-        <div id="slJailTimer" class="sl-jail-timer"></div>
-        <p class="sl-jail-note">Süre dolmadan hiçbir işlem yapamazsınız.</p>
-      </div>`;
-    const tick = () => {
-      const left = releaseAt - Date.now();
-      if (left <= 0) { window.location.reload(); return; }
-      const h = Math.floor(left / 3600000);
-      const m = Math.floor((left % 3600000) / 60000);
-      const s = Math.floor((left % 60000) / 1000);
-      const el = document.getElementById('slJailTimer');
-      if (el) el.textContent = `${h}s ${m}d ${s}sn kaldı`;
-      setTimeout(tick, 1000);
-    };
-    tick();
-  };
-
-  /* Maddeler 51-60: Trafik cezaları + Rüşvet takibi */
-  window.SL2_issueTrafficFine = async function (targetUid, violationType, officerUid) {
-    const fines = {
-      'hız ihlali': 1200,
-      'kırmızı ışık': 800,
-      'alkollü araç kullanma': 5000,
-      'belt ihlali': 400
-    };
-    const amount = fines[violationType] || 500;
-    await SL2_issueFine(targetUid, amount, officerUid, `Trafik: ${violationType}`);
-  };
-
-  window.SL2_reportBribery = async function (officerUid, amount, evidence) {
-    await dbPush('briberyReports', {
-      officer: officerUid,
-      amount,
-      evidence: (evidence || '').slice(0, 500),
-      reportedBy: GZ.uid,
-      ts: Date.now(),
-      status: 'investigating'
-    });
-    window.toast?.('🔍 Rüşvet ihbarı MİT\'e iletildi', 'info');
-  };
-
-  /* Maddeler 61-80: MİT Paneli + parmak izi veritabanı */
-  window.SL2_getMITReport = async function (targetUid) {
-    if (!GZ.data?.mitAgent && !GZ.data?.isFounder) {
-      return window.toast?.('MİT yetkisi gerekli', 'error');
-    }
-    const user = await dbGet(`users/${targetUid}`);
-    const fines = await dbGet(`users/${targetUid}/fines`) || {};
-    const crimes = await dbGet(`court/cases`) || {};
-    const cases = Object.values(crimes).filter(c => c.suspect === targetUid);
-    return { user, fineCount: Object.keys(fines).length, caseCount: cases.length };
-  };
-
-  window.SL2_addFingerprint = async function (uid, fpData) {
-    await dbSet(`fingerprints/${uid}`, {
-      data: fpData,
-      registeredAt: Date.now(),
-      registeredBy: GZ.uid
-    });
-  };
-  window.SL2_queryFingerprint = async function (fpData) {
-    const all = await dbGet('fingerprints') || {};
-    return Object.entries(all).find(([, v]) => v.data === fpData)?.[0] || null;
-  };
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   SL3 — EKONOMİ, SGK VE TİCARET (Maddeler 81-130)
-   ══════════════════════════════════════════════════════════════════════════ */
-async function SL3_initEconomyExtensions() {
-
-  /* Madde 81: Haftalık SGK — Her Pazar gecesi işçi başına otomatik prim */
-  window.SL3_collectSGK = async function () {
-    /* Lock: sadece bir kullanıcı/oturum çalıştırsın */
-    const r = await db.ref('system/sgkLock').transaction(cur => {
-      if (cur && (Date.now() - cur) < 60000) return;
-      return Date.now();
-    });
-    if (!r.committed) return;
-
-    const shops = await dbGet('shops') || {};
-    const sgkRate = (await dbGet('system/sgkRate')) || 500; // işçi başı TL
-    const updates = {};
-
-    for (const [shopId, shop] of Object.entries(shops)) {
-      const workers = shop.workers || 0;
-      const ownerUid = shop.ownerUid;
-      if (!ownerUid || workers <= 0) continue;
-
-      const premium = workers * sgkRate;
-      const balance = await dbGet(`users/${ownerUid}/money`);
-
-      if (balance >= premium) {
-        updates[`users/${ownerUid}/money`] = firebase.database.ServerValue.increment(-premium);
-        updates[`users/${ownerUid}/sgkStatus`] = 'paid';
-        updates[`system/sgkRevenue`] = firebase.database.ServerValue.increment(premium);
-      } else {
-        /* Madde 82: SGK borcu — dükkan mühürlü */
-        updates[`shops/${shopId}/sealed`] = true;
-        updates[`users/${ownerUid}/sgkStatus`] = 'debt';
-        updates[`users/${ownerUid}/sgkDebt`] = firebase.database.ServerValue.increment(premium);
-      }
-    }
-    if (Object.keys(updates).length) {
-      await db.ref('/').update(updates);
-    }
-    console.log('[SL3] SGK tahsilatı tamamlandı');
-  };
-
-  /* Madde 82: Mühürlü dükkan kontrolü — ekonomi.js buyItem'a ekleme */
-  const _origBuyItem = window.buyItem;
-  window.buyItem = async function (shopId, ...args) {
-    const shop = await dbGet(`shops/${shopId}`);
-    if (shop?.sealed) {
-      return window.toast?.('🚫 Bu dükkan SGK borcu nedeniyle mühürlüdür', 'error');
-    }
-    if (_origBuyItem) return _origBuyItem(shopId, ...args);
-  };
-
-  /* Madde 83: Asgari Ücret — tüm maliyetleri etkileyen katsayı */
-  window.SL3_getMinWageCoeff = async function () {
-    const minWage = (await dbGet('system/minWage')) || 17002;
-    const base = 17002;
-    return +(minWage / base).toFixed(4);
-  };
-
-  /* Madde 84: Merkez Bankası — faiz + enflasyon */
-  window.SL3_setCentralBankRate = async function (interestRate) {
-    if (!GZ.data?.isFounder && !GZ.data?.isAdmin) {
-      return window.toast?.('Yetkisiz işlem', 'error');
-    }
-    interestRate = Math.min(50, Math.max(0, Number(interestRate)));
-    await dbUpdate('system/merkezBankasi', {
-      interestRate,
-      updatedAt: Date.now(),
-      updatedBy: GZ.uid
-    });
-    /* Enflasyon dengeleme — market fiyatlarına yansıt */
-    await SL3_applyInflation(interestRate);
-    await SL1_broadcastResmiGazete?.(`🏦 MB faiz oranı %${interestRate} olarak güncellendi`);
-    window.toast?.(`🏦 Faiz oranı %${interestRate} ayarlandı`, 'success');
-  };
-
-  /* Madde 197: Enflasyon Paneli — fiyatları otomatik artır */
-  window.SL3_applyInflation = async function (interestRate) {
-    const inflationFactor = 1 + (interestRate / 100) * 0.1;
-    const catalog = window.URUNLER || {};
-    const updates = {};
-    for (const key of Object.keys(catalog)) {
-      const base = catalog[key].base;
-      updates[`dynamicPrices/${key}`] = +(base * inflationFactor).toFixed(2);
-    }
-    await db.ref('/').update(updates);
-  };
-
-  /* Madde 85: Gizli Stokçuluk — malı depodan çekip bekletme */
-  window.SL3_hideStock = async function (itemKey, qty, warehouseId) {
-    const stock = await dbGet(`warehouses/${warehouseId}/items/${itemKey}`) || 0;
-    if (stock < qty) return window.toast?.('Yetersiz stok', 'error');
-    await db.ref(`warehouses/${warehouseId}/items/${itemKey}`).transaction(s => Math.max(0, (s||0) - qty));
-    await db.ref(`users/${GZ.uid}/hiddenStock/${itemKey}`).transaction(s => (s||0) + qty);
-    window.toast?.(`📦 ${qty} adet gizli depoya alındı`, 'success');
-  };
-
-  /* Madde 86: Tezgah Altı Ticaret — kişiye özel pazarlık */
-  window.SL3_makePrivateDeal = async function (buyerUid, itemKey, qty, pricePerUnit) {
-    const total = qty * pricePerUnit;
-    const sellerBalance = await dbGet(`users/${GZ.uid}/hiddenStock/${itemKey}`) || 0;
-    if (sellerBalance < qty) return window.toast?.('Stok yetersiz', 'error');
-    const buyerMoney = await dbGet(`users/${buyerUid}/money`);
-    if (buyerMoney < total) return window.toast?.('Alıcının parası yetersiz', 'error');
-
-    await db.ref(`users/${GZ.uid}/hiddenStock/${itemKey}`).transaction(s => Math.max(0, (s||0) - qty));
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => (m||0) + total);
-    await db.ref(`users/${buyerUid}/money`).transaction(m => Math.max(0,(m||0) - total));
-    await db.ref(`users/${buyerUid}/inventory/${itemKey}`).transaction(s => (s||0) + qty);
-    await dbPush('tezgahAltiLog', {
-      seller: GZ.uid, buyer: buyerUid,
-      item: itemKey, qty, pricePerUnit, total, ts: Date.now()
-    });
-    window.toast?.(`🤝 Gizli satış tamamlandı: ${cashFmt(total)}`, 'success');
-  };
-
-  /* Madde 87: İhracat vergisi — exportShip'i sarmala */
-  const _origExportShip = window.exportShip;
-  window.exportShip = async function (exId, qty) {
-    const tradeSettings = await dbGet('system/trade') || {};
-    const exportTaxRate = tradeSettings.exportTaxRate || 0.08;
-    const ex = await dbGet(`exports/list/${exId}`);
-    if (!ex) return;
-    const gross = qty * ex.pricePerUnit;
-    const tax = +(gross * exportTaxRate).toFixed(2);
-    const net = +(gross - tax).toFixed(2);
-
-    const authorityUid = await dbGet('system/authorityUid');
-    if (authorityUid && tax > 0) {
-      await db.ref(`users/${authorityUid}/money`).transaction(m => (m||0) + tax);
-      await dbPush('financeLog', {
-        uid: GZ.uid, reason: 'export-tax', gross, tax, net,
-        ts: firebase.database.ServerValue.TIMESTAMP
-      });
-    }
-    if (_origExportShip) return _origExportShip(exId, qty);
-  };
-
-  /* Madde 88: Maden Ruhsatı */
-  window.SL3_buyMiningLicense = async function (province, mineType) {
-    const cost = { altin: 250000, gumus: 80000, bakir: 30000, demir: 25000, kromit: 40000 };
-    const fee = cost[mineType] || 50000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < fee) return window.toast?.(`Ruhsat ücreti: ${cashFmt(fee)}`, 'error');
-    const canMine = await SL1_canOpenShopInProvince?.(GZ.uid, province);
-    if (!canMine) return window.toast?.('Sadece kendi ilinizde maden ruhsatı alabilirsiniz', 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - fee));
-    await dbSet(`users/${GZ.uid}/miningLicenses/${province}/${mineType}`, {
-      issuedAt: Date.now(), expiresAt: Date.now() + 30 * 24 * 3600 * 1000
-    });
-    window.toast?.(`⛏️ ${mineType} ruhsatı alındı (30 gün)`, 'success');
-  };
-
-  /* Madde 89: Borsa İstanbul (GZ) — hisse alım/satım */
-  window.SL3_buyStock = async function (companyId, shares) {
-    const company = await dbGet(`borsa/${companyId}`);
-    if (!company) return window.toast?.('Şirket bulunamadı', 'error');
-    const price = company.currentPrice * shares;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < price) return window.toast?.('Yetersiz bakiye', 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - price));
-    await db.ref(`users/${GZ.uid}/stocks/${companyId}`).transaction(s => (s||0) + shares);
-    await db.ref(`borsa/${companyId}/totalShares`).transaction(t => (t||0) - shares);
-    await dbPush('borsaLog', {
-      uid: GZ.uid, company: companyId, shares, price, type: 'buy', ts: Date.now()
-    });
-    window.toast?.(`📈 ${shares} hisse alındı: ${cashFmt(price)}`, 'success');
-  };
-
-  window.SL3_sellStock = async function (companyId, shares) {
-    const owned = await dbGet(`users/${GZ.uid}/stocks/${companyId}`) || 0;
-    if (owned < shares) return window.toast?.('Yetersiz hisse', 'error');
-    const company = await dbGet(`borsa/${companyId}`);
-    const revenue = company.currentPrice * shares;
-    await addCash(GZ.uid, revenue, 'stock-sell');
-    await db.ref(`users/${GZ.uid}/stocks/${companyId}`).transaction(s => Math.max(0,(s||0) - shares));
-    await db.ref(`borsa/${companyId}/totalShares`).transaction(t => (t||0) + shares);
-    window.toast?.(`📉 ${shares} hisse satıldı: ${cashFmt(revenue)}`, 'success');
-  };
-
-  /* Madde 90: Kredi Notu — gecikme = faiz artışı */
-  window.SL3_updateCreditScore = async function (uid) {
-    const bank = await dbGet(`bank/${uid}`);
-    if (!bank) return;
-    let score = (await dbGet(`users/${uid}/creditScore`)) || 700;
-    if (bank.loan > 0 && Date.now() > (bank.loanDueDate || Infinity)) {
-      score = Math.max(300, score - 50);
-      await dbUpdate(`bank/${uid}`, {
-        loanInterestRate: firebase.database.ServerValue.increment(0.5)
-      });
-    } else if (bank.loan === 0) {
-      score = Math.min(900, score + 10);
-    }
-    await dbUpdate(`users/${uid}`, { creditScore: score });
-    return score;
-  };
-
-  /* Maddeler 91-130: Darphane, kara para, icra, holding, iflas */
-  window.SL3_mintCoin = async function (goldGrams) {
-    /* Darphane: altın → oyun parası */
-    const goldStock = await dbGet(`users/${GZ.uid}/inventory/altin`) || 0;
-    if (goldStock < goldGrams) return window.toast?.('Yeterli altın yok', 'error');
-    const value = goldGrams * 2400 * 0.95; // %5 darphane kesintisi
-    await db.ref(`users/${GZ.uid}/inventory/altin`).transaction(s => Math.max(0,(s||0) - goldGrams));
-    await addCash(GZ.uid, value, 'mint');
-    window.toast?.(`🪙 ${goldGrams}g altın → ${cashFmt(value)}`, 'success');
-  };
-
-  window.SL3_createHolding = async function (name, subsidiaries) {
-    const cost = 500000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.(`Holding kurmak için ${cashFmt(cost)} gerekli`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - cost));
-    await dbSet(`holdings/${GZ.uid}_${Date.now()}`, {
-      name, subsidiaries, owner: GZ.uid,
-      createdAt: Date.now(), treasury: 0
-    });
-    window.toast?.(`🏢 ${name} holding kuruldu`, 'success');
-  };
-
-  window.SL3_applyInvestmentIncentive = async function (uid, amount) {
-    /* Devlet yatırım teşviki: %30 devlet katkısı */
-    if (!GZ.data?.isFounder && !GZ.data?.isAdmin) return;
-    const bonus = +(amount * 0.30).toFixed(2);
-    await addCash(uid, bonus, 'investment-incentive');
-    window.toast?.(`💸 Yatırım teşviki: ${cashFmt(bonus)}`, 'success');
-  };
-
-  /* SGK otomatik döngüsü — Her Pazar 23:00 */
-  (function scheduleSGK() {
-    const now = new Date();
-    const nextSunday = new Date(now);
-    nextSunday.setDate(now.getDate() + (7 - now.getDay()) % 7 || 7);
-    nextSunday.setHours(23, 0, 0, 0);
-    const delay = nextSunday - now;
-    setTimeout(async () => {
-      await window.SL3_collectSGK();
-      scheduleSGK();
-    }, delay);
-    console.log(`[SL3] SGK zamanlandı: ${Math.round(delay/3600000)} saat sonra`);
-  })();
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   SL4 — SAVUNMA VE TEKNOLOJİ (Maddeler 131-170)
-   ══════════════════════════════════════════════════════════════════════════ */
-async function SL4_initDefense() {
-
-  /* Madde 131: Ar-Ge — gerçek zamanlı (saatler/günler süren) */
-  window.SL4_startRnD = async function (projectName, durationHours, cost) {
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.('Ar-Ge bütçesi yetersiz', 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - cost));
-    const completesAt = Date.now() + durationHours * 3600 * 1000;
-    const ref = await dbPush(`rnd/${GZ.uid}`, {
-      projectName, cost, completesAt,
-      startedAt: Date.now(), status: 'active',
-      patentGranted: false
-    });
-    window.toast?.(`🔬 Ar-Ge başladı: ${projectName} (${durationHours}s)`, 'success');
-    return ref.key;
-  };
-
-  window.SL4_checkRnDCompletion = async function () {
-    const projects = await dbGet(`rnd/${GZ.uid}`) || {};
-    for (const [id, proj] of Object.entries(projects)) {
-      if (proj.status === 'active' && Date.now() >= proj.completesAt) {
-        await dbUpdate(`rnd/${GZ.uid}/${id}`, { status: 'completed', completedAt: Date.now() });
-        window.toast?.(`🏆 Ar-Ge tamamlandı: ${proj.projectName}`, 'success');
-      }
-    }
-  };
-
-  /* Madde 132: Patent Hakkı — diğerlerinden telif al */
-  window.SL4_registerPatent = async function (rndId, techName) {
-    const proj = await dbGet(`rnd/${GZ.uid}/${rndId}`);
-    if (!proj || proj.status !== 'completed') {
-      return window.toast?.('Ar-Ge tamamlanmamış', 'error');
-    }
-    const existing = await dbGet(`patents/${techName}`);
-    if (existing) return window.toast?.('Bu patent zaten alınmış', 'error');
-    await dbSet(`patents/${techName}`, {
-      owner: GZ.uid, ownerUsername: GZ.data?.username,
-      rndId, registeredAt: Date.now(), royaltyRate: 0.02
-    });
-    await dbUpdate(`rnd/${GZ.uid}/${rndId}`, { patentGranted: true, patentName: techName });
-    window.toast?.(`📜 Patent tescillendi: ${techName}`, 'success');
-  };
-
-  /* Madde 132b: Telif tahsilatı — patent sahibi kullanımdan pay alır */
-  window.SL4_collectRoyalties = async function (techName) {
-    const patent = await dbGet(`patents/${techName}`);
-    if (!patent) return;
-    const revenue = (await dbGet(`patents/${techName}/totalUsage`)) || 0;
-    const royalty = +(revenue * patent.royaltyRate).toFixed(2);
-    if (royalty > 0) {
-      await addCash(patent.owner, royalty, 'royalty');
-      await dbSet(`patents/${techName}/totalUsage`, 0);
-      window.toast?.(`📜 Telif geliri: ${cashFmt(royalty)}`, 'success');
-    }
-  };
-
-  /* Madde 133: İHA/SİHA Üretim Sistemi — parça birleştirme */
-  const DRONE_PARTS = {
-    motor:   { name: 'Drone Motoru',   cost: 50000, time: 48 },
-    kanat:   { name: 'Karbon Kanat',   cost: 35000, time: 36 },
-    yazilim: { name: 'Uçuş Yazılımı', cost: 80000, time: 72 },
-    govde:   { name: 'Kompozit Gövde', cost: 45000, time: 40 },
-  };
-
-  window.SL4_manufactureDronePart = async function (partKey) {
-    const part = DRONE_PARTS[partKey];
-    if (!part) return window.toast?.('Geçersiz parça', 'error');
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < part.cost) return window.toast?.(`Yetersiz bakiye: ${cashFmt(part.cost)}`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - part.cost));
-    const completesAt = Date.now() + part.time * 3600 * 1000;
-    await dbPush(`defense/${GZ.uid}/parts`, {
-      partKey, name: part.name, completesAt, ready: false
-    });
-    window.toast?.(`🔧 Üretim başladı: ${part.name} (${part.time}s)`, 'success');
-  };
-
-  window.SL4_assembleDrone = async function () {
-    const parts = await dbGet(`defense/${GZ.uid}/parts`) || {};
-    const readyParts = {};
-    for (const [id, p] of Object.entries(parts)) {
-      if (Date.now() >= p.completesAt) readyParts[p.partKey] = id;
-    }
-    const required = Object.keys(DRONE_PARTS);
-    const hasAll = required.every(k => readyParts[k]);
-    if (!hasAll) {
-      const missing = required.filter(k => !readyParts[k]).join(', ');
-      return window.toast?.(`Eksik parçalar: ${missing}`, 'error');
-    }
-    /* Parçaları tüket */
-    const updates = {};
-    for (const [k, id] of Object.entries(readyParts)) {
-      updates[`defense/${GZ.uid}/parts/${id}`] = null;
-    }
-    updates[`users/${GZ.uid}/drones`] = firebase.database.ServerValue.increment(1);
-    await db.ref('/').update(updates);
-    window.toast?.('🚁 İHA/SİHA üretildi! Filonuza eklendi.', 'success');
-  };
-
-  /* Madde 134: Stratejik Ambargo — ham madde kesme */
-  window.SL4_applyEmbargo = async function (targetUid, itemKey) {
-    if (!GZ.data?.isFounder && !GZ.data?.isAdmin) {
-      return window.toast?.('Yetkisiz', 'error');
-    }
-    await dbSet(`embargoes/${targetUid}/${itemKey}`, {
-      by: GZ.uid, appliedAt: Date.now(), active: true
-    });
-    await SL1_broadcastResmiGazete?.(`🚫 ${targetUid.slice(0,8)} kullanıcısına ambargo uygulandı`);
-    window.toast?.('⛔ Ambargo uygulandı', 'success');
-  };
-
-  /* Madde 135: Siber Savaş — şirket verisi çalma denemesi */
-  window.SL4_attemptCyberAttack = async function (targetUid) {
-    const minLevel = 25;
-    if ((GZ.data?.level || 0) < minLevel) {
-      return window.toast?.(`Siber savaş için seviye ${minLevel} gerekli`, 'error');
-    }
-    const cost = 100000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.(`Siber saldırı maliyeti: ${cashFmt(cost)}`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - cost));
-    const success = Math.random() < 0.3; // %30 başarı
-    if (success) {
-      const targetData = await dbGet(`users/${targetUid}`);
-      await dbPush(`users/${GZ.uid}/stolenaData`, {
-        targetUid, stolenAt: Date.now(),
-        preview: { level: targetData?.level, netWorth: targetData?.netWorth }
-      });
-      window.toast?.('💻 Siber saldırı başarılı! Veri ele geçirildi.', 'success');
-      await dbPush(`users/${targetUid}/notifications`, {
-        msg: '⚠️ Sistemlerinize siber saldırı girişimi tespit edildi!',
-        ts: Date.now(), read: false
-      });
-    } else {
-      await db.ref(`users/${GZ.uid}/criminalRecord`).transaction(c => (c||0) + 1);
-      window.toast?.('💻 Siber saldırı başarısız — sabıka kaydınıza eklendi', 'error');
-    }
-  };
-
-  /* Maddeler 136-170: Uydu fırlatma, devlet ihaleleri */
-  window.SL4_launchSatellite = async function (satelliteName, purpose) {
-    const drones = await dbGet(`users/${GZ.uid}/drones`) || 0;
-    if (drones < 5) return window.toast?.('5 İHA gerekli (uydu taşıyıcı sistem)', 'error');
-    const cost = 10000000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.(`Uydu fırlatma: ${cashFmt(cost)}`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - cost));
-    await dbSet(`satellites/${GZ.uid}_${Date.now()}`, {
-      name: satelliteName, purpose,
-      launchedAt: Date.now(), owner: GZ.uid,
-      status: 'orbit'
-    });
-    await SL1_broadcastResmiGazete?.(`🛸 ${GZ.data?.username} uydu fırlattı: ${satelliteName}`);
-    window.toast?.(`🛸 Uydu fırlatıldı: ${satelliteName}`, 'success');
-  };
-
-  window.SL4_bidGovernmentContract = async function (contractId, bid) {
-    const contract = await dbGet(`govContracts/${contractId}`);
-    if (!contract) return window.toast?.('İhale bulunamadı', 'error');
-    if (bid < contract.minBid) return window.toast?.(`Min teklif: ${cashFmt(contract.minBid)}`, 'error');
-    await dbUpdate(`govContracts/${contractId}/bids`, {
-      [GZ.uid]: { amount: bid, username: GZ.data?.username, ts: Date.now() }
-    });
-    window.toast?.(`📋 İhale teklifiniz: ${cashFmt(bid)}`, 'success');
-  };
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   SL5 — MODERN MEDYA VE KRİZ (Maddeler 171-200)
-   ══════════════════════════════════════════════════════════════════════════ */
-async function SL5_initMediaCrisis() {
-
-  /* Madde 171: Alt Yazı Yasağı — haberler UI bildirimi olarak gelir */
-  window.SL5_listenNewsNotifications = function () {
-    db.ref('news').limitToLast(5).on('child_added', snap => {
-      const d = snap.val();
-      if (!d || (Date.now() - d.ts) > 10000) return;
-      showNewsNotification(d.title, d.category);
-    });
-  };
-
-  function showNewsNotification(title, category) {
-    const icons = { ekonomi:'💰', siyaset:'🏛️', spor:'⚽', teknoloji:'💻', default:'📰' };
-    const icon = icons[category] || icons.default;
-    const div = document.createElement('div');
-    div.className = 'sl-news-notif';
-    div.innerHTML = `<span class="sl-news-icon">${icon}</span><span>${title}</span>`;
-    document.body.appendChild(div);
-    setTimeout(() => div.classList.add('sl-news-visible'), 10);
-    setTimeout(() => { div.classList.remove('sl-news-visible'); setTimeout(() => div.remove(), 500); }, 5000);
+  if (money < fee) {
+    return window.toast?.(`❌ Kimlik kartı için ${(window.cashFmt || (n => n + '₺'))(fee)} gerekli. Bakiyeniz: ${(window.cashFmt || (n => n + '₺'))(money)}`, 'error', 5000);
   }
 
-  SL5_listenNewsNotifications();
+  window.showModal?.('🪪 Kimlik Kartı Başvurusu', `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <p style="color:#94a3b8;font-size:13px;margin:0">Muhtarlıktan kimlik kartı almak için ücret: <b style="color:#f59e0b">${(window.cashFmt || (n => n + '₺'))(fee)}</b></p>
+      <div class="input-group">
+        <label style="color:#94a3b8;font-size:12px">Ad Soyad</label>
+        <input id="sl_icFullName" type="text" placeholder="Adınız Soyadınız" value="${userData.username || ''}"
+          style="width:100%;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div class="input-group">
+        <label style="color:#94a3b8;font-size:12px">İl</label>
+        <input id="sl_icProvince" type="text" placeholder="İstanbul, Ankara..." value="${userData.province || userData.location || ''}"
+          style="width:100%;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <button onclick="window.SL_submitIdCard()" 
+        style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:14px;cursor:pointer;width:100%">
+        🪪 Kimlik Kartı Al (${(window.cashFmt || (n => n + '₺'))(fee)})
+      </button>
+    </div>
+  `);
+};
 
-  /* Madde 172: Şehir Billboardları */
-  window.SL5_purchaseBillboard = async function (province, message, durationDays) {
-    const cost = durationDays * 5000;
-    const balance = await dbGet(`users/${GZ.uid}/money`);
-    if (balance < cost) return window.toast?.(`Billboard ücreti: ${cashFmt(cost)}`, 'error');
-    await db.ref(`users/${GZ.uid}/money`).transaction(m => Math.max(0,(m||0) - cost));
-    await dbPush(`billboards/${province}`, {
-      message: message.slice(0, 200),
-      owner: GZ.uid,
-      ownerName: GZ.data?.username,
-      expiresAt: Date.now() + durationDays * 86400000,
-      createdAt: Date.now()
-    });
-    window.toast?.(`📺 Billboard yayında: ${province}`, 'success');
+window.SL_submitIdCard = async function () {
+  const uid = window.GZ?.uid;
+  if (!uid) return;
+
+  const fullName = document.getElementById('sl_icFullName')?.value?.trim();
+  const province = document.getElementById('sl_icProvince')?.value?.trim();
+
+  if (!fullName) return window.toast?.('Ad soyad gir', 'error');
+  if (!province) return window.toast?.('İl gir', 'error');
+
+  const fee = (await window.db?.ref('system/idCardFee').once('value').then(s => s.val())) || 500;
+  const money = window.GZ?.data?.money || 0;
+
+  if (money < fee) return window.toast?.('Yetersiz bakiye', 'error');
+
+  // TC No üret (rastgele ama tutarlı)
+  const tcNo = String(uid).split('').reduce((a, c) => a + c.charCodeAt(0), 0).toString().padStart(11, '1').slice(0, 11);
+
+  const idCard = {
+    fullName,
+    province,
+    tcNo,
+    issuedAt: Date.now(),
+    issuedBy: 'Muhtarlık'
   };
 
-  window.SL5_renderBillboards = async function (province, container) {
-    const boards = await dbGet(`billboards/${province}`) || {};
-    const active = Object.values(boards).filter(b => b.expiresAt > Date.now());
-    if (!container) return active;
-    container.innerHTML = active.map(b => `
-      <div class="sl-billboard">
-        <span class="sl-bb-owner">📺 ${b.ownerName}</span>
-        <p>${b.message}</p>
-      </div>`).join('') || '<p>Billboard yok</p>';
-    return active;
-  };
+  // Para düş
+  await window.db?.ref('users/' + uid + '/money').transaction(m => Math.max(0, (m || 0) - fee));
+  await window.db?.ref('users/' + uid + '/idCard').set(idCard);
+  await window.db?.ref('users/' + uid + '/province').set(province);
 
-  /* Madde 173: GZ-Radyo */
-  window.SL5_broadcastRadio = async function (message, category) {
-    await dbPush('gzRadio', {
-      message: message.slice(0, 300),
-      category: category || 'genel',
-      broadcaster: GZ.uid,
-      broadcasterName: GZ.data?.username,
-      ts: Date.now()
-    });
-    window.toast?.('📻 Yayın başladı', 'success');
-  };
+  // Log
+  await window.db?.ref('txlog').push({ uid, desc: 'Kimlik kartı ücreti', amount: -fee, ts: Date.now() });
 
-  window.SL5_listenRadio = function (onMessage) {
-    db.ref('gzRadio').limitToLast(1).on('child_added', snap => {
-      const d = snap.val();
-      if (!d || Date.now() - d.ts > 15000) return;
-      onMessage(d);
-    });
-  };
-
-  /* Madde 174: Askerlik Celbi — oyun yaşı 2. ay kontrolü */
-  window.SL5_checkDraftStatus = async function (uid) {
-    const user = await dbGet(`users/${uid}`);
-    const createdAt = user?.createdAt || Date.now();
-    const monthsPlayed = (Date.now() - createdAt) / (30 * 24 * 3600 * 1000);
-    const draftDone = user?.militaryServiceDone;
-    if (monthsPlayed >= 2 && !draftDone) {
-      await SL5_activateMilitaryService(uid);
-    }
-  };
-
-  window.SL5_activateMilitaryService = async function (uid) {
-    const serviceEndAt = Date.now() + 3 * 24 * 3600 * 1000;
-    await dbUpdate(`users/${uid}`, {
-      inMilitaryService: true,
-      militaryServiceEnd: serviceEndAt
-    });
-    /* Madde 175: Mehmetçik Maaşı */
-    await addCash(uid, 50000, 'military-salary');
-    if (uid === GZ.uid) {
-      window.toast?.('🪖 Vatan hizmetine çağrıldınız! 3 gün sürecek. 50.000₺ maaş yatırıldı.', 'info', 8000);
-    }
-  };
-
-  /* Madde 176: Sıkıyönetim — tüm piyasayı dondur */
-  window.SL5_declareMartialLaw = async function (reason, durationHours) {
-    if (!GZ.data?.isFounder && !GZ.data?.isAdmin) return window.toast?.('Yetkisiz', 'error');
-    const endsAt = Date.now() + durationHours * 3600 * 1000;
-    await dbSet('system/martialLaw', { active: true, reason, endsAt, declaredBy: GZ.uid });
-    await SL1_broadcastResmiGazete?.(`🚨 SIKIYÖNETİM İLAN EDİLDİ: ${reason}`);
-    window.toast?.('🚨 Sıkıyönetim ilan edildi', 'warn', 10000);
-  };
-
-  /* Sıkıyönetim aktifse işlemleri engelle */
-  const _origAddCash = window.addCash;
-  window.addCash = async function (uid, amount, reason) {
-    const ml = await dbGet('system/martialLaw');
-    if (ml?.active && Date.now() < ml.endsAt) {
-      if (!['military-salary', 'mint'].includes(reason)) {
-        window.toast?.('🚨 Sıkıyönetim: Finansal işlemler dondurulmuştur', 'error');
-        return false;
-      }
-    }
-    if (_origAddCash) return _origAddCash(uid, amount, reason);
-  };
-
-  /* Madde 178: Gümrük Müşavirliği — dış ticaret evrak takibi */
-  window.SL5_submitCustomsDeclaration = async function (exportId, documents) {
-    const user = await dbGet(`users/${GZ.uid}`);
-    if (user?.role !== 'customsBroker' && !user?.isFounder) {
-      return window.toast?.('Gümrük müşavirliği rolü gerekli', 'error');
-    }
-    await dbPush('customsDeclarations', {
-      exportId, documents, broker: GZ.uid,
-      status: 'pending', submittedAt: Date.now()
-    });
-    window.toast?.('📋 Gümrük beyannamesi gönderildi', 'success');
-  };
-
-  /* Madde 179: Halk Ayaklanması — mutluluk düşükse botlar yağmalar */
-  window.SL5_checkRiotCondition = async function (province) {
-    const happiness = await SL1_getCityHappiness?.(province) || 50;
-    if (happiness < 20) {
-      await SL5_triggerRiot(province);
-    }
-  };
-
-  window.SL5_triggerRiot = async function (province) {
-    const shops = await dbGet('shops') || {};
-    const provincialShops = Object.entries(shops)
-      .filter(([, s]) => s.province === province)
-      .slice(0, 3); // ilk 3 dükkan
-
-    for (const [shopId] of provincialShops) {
-      const loot = Math.floor(Math.random() * 10000) + 5000;
-      await db.ref(`shops/${shopId}/revenue`).transaction(r => Math.max(0, (r||0) - loot));
-      await dbPush(`shops/${shopId}/riotLog`, { loot, ts: Date.now() });
-    }
-    await SL1_broadcastResmiGazete?.(`🔥 ${province}'de halk ayaklanması! Dükkanlar yağmalanıyor.`);
-    window.toast?.(`🔥 ${province} - HALK AYAKLANMASI`, 'warn', 10000);
-  };
-
-  /* Madde 180: Dünya Liderliği — final unvanı */
-  window.SL5_checkWorldLeaderStatus = async function () {
-    const user = GZ.data;
-    if (!user) return;
-    const criteria = {
-      level: user.level >= 100,
-      netWorth: user.netWorth >= 1e9,
-      drones: (await dbGet(`users/${GZ.uid}/drones`) || 0) >= 10,
-      patent: Object.keys(await dbGet(`patents`) || {}).some(k =>
-        (async () => (await dbGet(`patents/${k}/owner`)) === GZ.uid)()
-      ),
-      president: (await dbGet('system/president')) === GZ.uid
-    };
-    const achieved = Object.values(criteria).filter(Boolean).length;
-    if (achieved === Object.keys(criteria).length) {
-      await dbUpdate(`users/${GZ.uid}`, { title: '🌍 Dünya Lideri' });
-      await SL1_broadcastResmiGazete?.(`🌍 ${user.username} DÜNYA LİDERİ OLDU!`);
-      window.toast?.('🌍 TEBRİKLER — DÜNYA LİDERİ UNVANINI KAZANDINIZ!', 'success', 15000);
-    }
-    return { criteria, achieved };
-  };
-
-  /* Periyodik kontroller */
-  setInterval(() => {
-    if (GZ.uid) {
-      SL5_checkDraftStatus(GZ.uid);
-      if (GZ.data?.province) {
-        SL5_checkRiotCondition(GZ.data.province);
-      }
-      SL4_checkRnDCompletion?.();
-      SL3_updateCreditScore?.(GZ.uid);
-    }
-  }, 5 * 60 * 1000); // Her 5 dk
-
-  /* Sıkıyönetim otomatik bitiş */
-  setInterval(async () => {
-    const ml = await dbGet('system/martialLaw');
-    if (ml?.active && Date.now() >= ml.endsAt) {
-      await dbUpdate('system/martialLaw', { active: false });
-      await SL1_broadcastResmiGazete?.('✅ Sıkıyönetim kaldırıldı');
-    }
-  }, 60 * 1000);
-}
+  window.closeModal?.();
+  window.toast?.('🪪 Kimlik kartı alındı! ✅', 'success', 5000);
+};
 
 /* ══════════════════════════════════════════════════════════════════════════
-   UI YARDIMCILARI — Admin panel entegrasyonu
+   3. DİJİTAL CÜZDAN
    ══════════════════════════════════════════════════════════════════════════ */
-window.SL_renderAdminTab = async function (tabName, container) {
-  switch (tabName) {
-    case 'politics':
-      container.innerHTML = `
-        <div class="sl-panel">
-          <h3>🏛️ Siyasi Yönetim</h3>
-          <div class="sl-grid-2">
-            <div>
-              <label>Cumhurbaşkanı UID</label>
-              <input id="slPresUid" class="sl-input" placeholder="UID">
-              <button class="btn-primary sl-mt" onclick="dbSet('system/president',document.getElementById('slPresUid').value).then(()=>toast('✅ Cumhurbaşkanı atandı','success'))">Ata</button>
-            </div>
-            <div>
-              <label>Asgari Ücret (₺)</label>
-              <input id="slMinWage" class="sl-input" type="number" placeholder="17002">
-              <button class="btn-primary sl-mt" onclick="SL1_presidentialAction('setMinWage',document.getElementById('slMinWage').value)">Güncelle</button>
-            </div>
-            <div>
-              <label>İhracat Vergisi (%)</label>
-              <input id="slExTax" class="sl-input" type="number" placeholder="8">
-              <button class="btn-primary sl-mt" onclick="SL1_presidentialAction('setExportTax',document.getElementById('slExTax').value)">Güncelle</button>
-            </div>
-            <div>
-              <label>Gümrük Harcı (%)</label>
-              <input id="slCustoms" class="sl-input" type="number" placeholder="5">
-              <button class="btn-primary sl-mt" onclick="dbSet('system/customsDutyRate',document.getElementById('slCustoms').value/100).then(()=>toast('✅','success'))">Güncelle</button>
-            </div>
+window.SL_renderCuzdan = async function () {
+  if (!window.GZ?.uid) return;
+  const uid = window.GZ.uid;
+
+  try {
+    const [userData, bankData, kriptoPositions, borsaPositions, kriptoPrices, borsaPrices] = await Promise.all([
+      window.db.ref('users/' + uid).once('value').then(s => s.val()),
+      window.db.ref('bank/' + uid).once('value').then(s => s.val()),
+      window.db.ref('users/' + uid + '/kripto').once('value').then(s => s.val()),
+      window.db.ref('users/' + uid + '/borsa').once('value').then(s => s.val()),
+      window.db.ref('kriptoPrices').once('value').then(s => s.val()),
+      window.db.ref('borsaFiyatlar').once('value').then(s => s.val())
+    ]);
+
+    const fmt = window.cashFmt || (n => (n || 0).toLocaleString('tr-TR') + ' ₺');
+
+    // Kripto değer hesapla
+    let kriptoVal = 0;
+    const kriptoItems = [];
+    if (kriptoPositions && kriptoPrices) {
+      for (const [coin, pos] of Object.entries(kriptoPositions)) {
+        const amount = pos?.amount || 0;
+        const price = kriptoPrices[coin] || 0;
+        const val = amount * price;
+        kriptoVal += val;
+        if (amount > 0) kriptoItems.push({ coin, amount, price, val });
+      }
+    }
+
+    // Borsa değer hesapla
+    let borsaVal = 0;
+    const borsaItems = [];
+    if (borsaPositions && borsaPrices) {
+      for (const [ticker, pos] of Object.entries(borsaPositions)) {
+        const amount = pos?.amount || pos || 0;
+        const price = borsaPrices[ticker] || 0;
+        const val = amount * price;
+        borsaVal += val;
+        if (amount > 0) borsaItems.push({ ticker, amount, price, val });
+      }
+    }
+
+    const totalWealth = (userData?.money || 0) + (bankData?.balance || 0) + kriptoVal + borsaVal;
+
+    const main = document.getElementById('appMain');
+    if (!main) return;
+
+    main.innerHTML = `
+      <div style="padding:16px;max-width:800px;margin:0 auto">
+        <h2 style="color:#e2e8f0;margin:0 0 16px;font-size:18px;font-weight:800">💳 Dijital Cüzdan</h2>
+
+        <!-- Toplam Net Değer -->
+        <div style="background:linear-gradient(135deg,#1e3a5f,#0d1a2e);border:1px solid #3b82f6;border-radius:16px;padding:24px;margin-bottom:16px;text-align:center">
+          <div style="color:#94a3b8;font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:8px">TOPLAM NET DEĞER</div>
+          <div style="font-size:32px;font-weight:900;color:#f59e0b">${fmt(totalWealth)}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <!-- Nakit -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+            <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px">💵 NAKİT</div>
+            <div style="font-size:22px;font-weight:900;color:#22c55e;margin-top:8px">${fmt(userData?.money || 0)}</div>
           </div>
-        </div>`;
-      break;
+          <!-- Banka -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+            <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px">🏦 BANKA</div>
+            <div style="font-size:22px;font-weight:900;color:#60a5fa;margin-top:8px">${fmt(bankData?.balance || 0)}</div>
+          </div>
+          <!-- Kripto -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+            <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px">₿ KRİPTO</div>
+            <div style="font-size:22px;font-weight:900;color:#f59e0b;margin-top:8px">${fmt(kriptoVal)}</div>
+            ${kriptoItems.length ? `<div style="margin-top:8px;font-size:11px;color:#475569">${kriptoItems.slice(0,3).map(k => k.coin + ' × ' + k.amount.toFixed(4)).join(' | ')}</div>` : ''}
+          </div>
+          <!-- Borsa -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+            <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px">📈 BORSA</div>
+            <div style="font-size:22px;font-weight:900;color:#a78bfa;margin-top:8px">${fmt(borsaVal)}</div>
+            ${borsaItems.length ? `<div style="margin-top:8px;font-size:11px;color:#475569">${borsaItems.slice(0,3).map(b => b.ticker + ' × ' + b.amount).join(' | ')}</div>` : ''}
+          </div>
+        </div>
 
-    case 'justice':
-      container.innerHTML = `
-        <div class="sl-panel">
-          <h3>⚖️ Adalet Paneli</h3>
-          <p>Polis başvuruları, davalar ve ceza yönetimi aşağıdadır.</p>
-          <div id="slJusticeList"></div>
-          <script>
-            (async () => {
-              const apps = await dbGet('policeApplications') || {};
-              const el = document.getElementById('slJusticeList');
-              if (!el) return;
-              const pending = Object.entries(apps).filter(([,a])=>a.status==='pending');
-              el.innerHTML = pending.length ? pending.map(([id,a])=>
-                \`<div class="sl-item">👮 \${a.username} — <button class="btn-small" onclick="SL2_approvePolice('\${id}','\${a.uid}')">Onayla</button></div>\`
-              ).join('') : '<p class="sl-empty">Bekleyen başvuru yok</p>';
-            })();
-          <\/script>
-        </div>`;
-      break;
+        <!-- Kimlik Kartı -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px">🪪 KİMLİK KARTI</div>
+              <div style="color:${userData?.idCard ? '#22c55e' : '#ef4444'};font-weight:700;margin-top:4px">
+                ${userData?.idCard ? '✅ Mevcut — ' + (userData.idCard.fullName || '') : '❌ Kimlik kartın yok'}
+              </div>
+            </div>
+            <button onclick="window.SL_applyIdCard()" 
+              style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer">
+              ${userData?.idCard ? '🪪 Görüntüle' : '🪪 Al (Muhtarlık)'}
+            </button>
+          </div>
+        </div>
 
-    case 'martialLaw':
-      container.innerHTML = `
-        <div class="sl-panel">
-          <h3>🚨 Sıkıyönetim Paneli</h3>
-          <input id="slMlReason" class="sl-input" placeholder="Sebep">
-          <input id="slMlHours" class="sl-input" type="number" placeholder="Süre (saat)">
-          <button class="btn-danger sl-mt" onclick="SL5_declareMartialLaw(document.getElementById('slMlReason').value,document.getElementById('slMlHours').value)">🚨 İlan Et</button>
-          <button class="btn-secondary sl-mt" onclick="dbUpdate('system/martialLaw',{active:false}).then(()=>toast('Sıkıyönetim kaldırıldı','success'))">✅ Kaldır</button>
-        </div>`;
-      break;
+        <!-- Elmaslar -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+          <div style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:8px">💎 ELMASLAR</div>
+          <div style="font-size:28px;font-weight:900;color:#a78bfa">${userData?.diamonds || 0} 💎</div>
+          <div style="font-size:11px;color:#475569;margin-top:4px">Oyun içi premium para birimi</div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error('[SL_renderCuzdan]', e);
   }
 };
 
-/* Admin paneline yeni sekmeleri bağla */
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    const adminNav = document.getElementById('adminScreenNav');
-    if (!adminNav) return;
+/* ══════════════════════════════════════════════════════════════════════════
+   4. PERSONEL & MAAŞ SİSTEMİ
+   ══════════════════════════════════════════════════════════════════════════ */
 
-    const newSections = `
-      <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:#334155;padding:12px 14px 4px">SİYASİ</div>
-      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'politics')"><span>🏛️</span><span>Siyasi Yönetim</span></button>
-      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'justice')"><span>⚖️</span><span>Adalet Paneli</span></button>
-      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'martialLaw')"><span>🚨</span><span>Sıkıyönetim</span></button>
-      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'billboards')"><span>📺</span><span>Billboard Yönetimi</span></button>
-    `;
+// Personel ekleme (admin tarafından belirlenen maaşlar)
+window.SL_addPersonel = async function (businessUid, businessKey, businessType) {
+  if (!window.GZ?.uid) return;
+  const uid = window.GZ.uid;
 
-    const insertPoint = adminNav.querySelector('[style*="SİSTEM"]');
-    if (insertPoint) {
-      insertPoint.insertAdjacentHTML('beforebegin', newSections);
-    }
-  }, 2000);
-});
+  // Seviyelere göre personel kotası
+  const userData = await window.db.ref('users/' + uid).once('value').then(s => s.val());
+  const level = userData?.level || 1;
+  const quota = Math.floor(level / 5) + 1; // Her 5 seviyede 1 personel
+
+  const currentPersonel = userData?.personel || [];
+  if (currentPersonel.length >= quota) {
+    return window.toast?.(`❌ Seviye ${level}'de maksimum ${quota} personel alabilirsiniz. Seviye yükseltin!`, 'error', 5000);
+  }
+
+  const adminWage = (await window.db.ref('system/minWage').once('value').then(s => s.val())) || 17000;
+
+  window.showModal?.('👷 Personel Al', `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#0d1a2e;border-radius:8px;padding:12px;border:1px solid #1a2f4a">
+        <div style="color:#94a3b8;font-size:12px">Kotanız: <b style="color:#f59e0b">${currentPersonel.length}/${quota}</b> personel</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:4px">Maaş: <b style="color:#22c55e">${(window.cashFmt || (n=>n+'₺'))(adminWage)}/hafta</b> (admin tarafından belirlendi)</div>
+      </div>
+      <input id="sl_personelName" placeholder="Personel adı" 
+        style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+      <select id="sl_personelRole" style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#94a3b8;font-size:13px">
+        <option value="kasiyer">💳 Kasiyer</option>
+        <option value="guvenlık">🛡️ Güvenlik</option>
+        <option value="depocu">📦 Depocu</option>
+        <option value="muhasebe">📊 Muhasebeci</option>
+        <option value="pazarlamaci">📢 Pazarlamacı</option>
+      </select>
+      <button onclick="window.SL_hirePersonel('${uid}','${businessKey}','${businessType}')"
+        style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;cursor:pointer">✅ İşe Al</button>
+    </div>
+  `);
+};
+
+window.SL_hirePersonel = async function (uid, businessKey, businessType) {
+  const name = document.getElementById('sl_personelName')?.value?.trim();
+  const role = document.getElementById('sl_personelRole')?.value;
+  if (!name) return window.toast?.('Personel adı gir', 'error');
+
+  const adminWage = (await window.db.ref('system/minWage').once('value').then(s => s.val())) || 17000;
+
+  const personel = {
+    name,
+    role,
+    wage: adminWage,
+    hiredAt: Date.now(),
+    businessKey,
+    businessType
+  };
+
+  await window.db.ref('users/' + uid + '/personel').push(personel);
+  await window.db.ref('txlog').push({ uid, desc: 'Personel alımı: ' + name, amount: -adminWage, ts: Date.now() });
+
+  window.closeModal?.();
+  window.toast?.(`✅ ${name} işe alındı! Haftalık maaş: ${(window.cashFmt || (n=>n+'₺'))(adminWage)}`, 'success', 5000);
+};
 
 /* ══════════════════════════════════════════════════════════════════════════
-   STİL EKLEME (sistem-logic özel CSS)
+   5. SGK SİSTEMİ
    ══════════════════════════════════════════════════════════════════════════ */
-(function injectStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    /* SL Panel */
-    .sl-panel { background:#0d1829; border:1px solid #1e3a5f; border-radius:12px; padding:20px; margin-bottom:16px; }
-    .sl-panel h3 { color:#60a5fa; margin:0 0 16px; font-size:16px; }
-    .sl-input { width:100%; padding:10px 12px; border:1px solid #1e3a5f; border-radius:8px; background:#080d1a; color:#e2e8f0; font-size:13px; margin-bottom:8px; box-sizing:border-box; }
-    .sl-input:focus { outline:none; border-color:#3b82f6; }
-    .sl-mt { margin-top:8px; width:100%; }
-    .sl-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .sl-list { margin-top:16px; }
-    .sl-item { display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid #1e3a5f; font-size:13px; color:#cbd5e1; }
-    .sl-badge { padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; }
-    .sl-pending { background:rgba(234,179,8,.15); color:#eab308; }
-    .sl-approved { background:rgba(34,197,94,.15); color:#22c55e; }
-    .sl-rejected { background:rgba(239,68,68,.15); color:#ef4444; }
-    .sl-upheld { background:rgba(168,85,247,.15); color:#a855f7; }
-    .sl-empty { color:#475569; text-align:center; padding:16px; font-size:13px; }
-    .sl-form { display:flex; flex-direction:column; gap:8px; }
-    /* Haber bildirimi */
-    .sl-news-notif { position:fixed; top:80px; right:16px; background:#0d1829; border:1px solid #1e3a5f; border-radius:10px; padding:10px 16px; display:flex; align-items:center; gap:10px; max-width:320px; transform:translateX(360px); transition:transform .4s; z-index:9999; color:#e2e8f0; font-size:13px; box-shadow:0 8px 32px rgba(0,0,0,.5); }
-    .sl-news-notif.sl-news-visible { transform:translateX(0); }
-    .sl-news-icon { font-size:20px; }
-    /* Hapishane */
-    .sl-jail-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; color:#e2e8f0; text-align:center; padding:32px; }
-    .sl-jail-cell { font-size:80px; margin-bottom:16px; }
-    .sl-jail-timer { font-size:32px; font-weight:700; color:#ef4444; margin:16px 0; font-variant-numeric:tabular-nums; }
-    .sl-jail-note { color:#64748b; font-size:13px; }
-    /* Billboard */
-    .sl-billboard { background:rgba(234,179,8,.1); border:1px solid rgba(234,179,8,.3); border-radius:10px; padding:14px; margin-bottom:10px; }
-    .sl-bb-owner { font-size:11px; color:#eab308; font-weight:700; }
-    /* Mobil uyum */
-    @media(max-width:640px) { .sl-grid-2 { grid-template-columns:1fr; } }
-    .btn-danger { background:rgba(239,68,68,.15); color:#ef4444; border:1px solid rgba(239,68,68,.3); border-radius:8px; padding:10px 20px; font-weight:700; cursor:pointer; width:100%; }
-    .btn-small { background:rgba(59,130,246,.15); color:#60a5fa; border:1px solid rgba(59,130,246,.3); border-radius:6px; padding:4px 10px; font-size:11px; font-weight:700; cursor:pointer; }
+window.SL_paySGK = async function () {
+  if (!window.GZ?.uid) return;
+  const uid = window.GZ.uid;
+  const userData = window.GZ.data || {};
+  const personel = userData.personel ? Object.values(userData.personel) : [];
+
+  if (personel.length === 0) {
+    return window.toast?.('SGK ödemesi için personel almanız gerekiyor', 'warn');
+  }
+
+  const totalWage = personel.reduce((s, p) => s + (p.wage || 0), 0);
+  const sgkAmount = Math.ceil(totalWage * 0.205); // %20.5 SGK işveren payı
+  const money = userData.money || 0;
+
+  window.showModal?.('🏥 SGK Ödemesi', `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#0d1a2e;border-radius:8px;padding:12px;border:1px solid #1a2f4a">
+        <div style="color:#94a3b8;font-size:13px">Personel Sayısı: <b style="color:#e2e8f0">${personel.length}</b></div>
+        <div style="color:#94a3b8;font-size:13px;margin-top:4px">Toplam Maaş: <b style="color:#f59e0b">${(window.cashFmt || (n=>n+'₺'))(totalWage)}</b></div>
+        <div style="color:#94a3b8;font-size:13px;margin-top:4px">SGK Primi (%20.5): <b style="color:#ef4444">${(window.cashFmt || (n=>n+'₺'))(sgkAmount)}</b></div>
+        <div style="color:#94a3b8;font-size:13px;margin-top:4px">Bakiyeniz: <b style="color:${money >= sgkAmount ? '#22c55e' : '#ef4444'}">${(window.cashFmt || (n=>n+'₺'))(money)}</b></div>
+      </div>
+      ${money < sgkAmount ? '<div style="color:#ef4444;font-size:12px;background:#ef444411;padding:10px;border-radius:6px;border:1px solid #ef444433">⚠️ Yetersiz bakiye! SGK primini ödeyemezsiniz. Vergi borcu oluşacak.</div>' : ''}
+      <button onclick="window.SL_submitSGK(${sgkAmount})" ${money < sgkAmount ? 'disabled' : ''}
+        style="background:${money < sgkAmount ? '#334155' : '#3b82f6'};color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;cursor:pointer">
+        ${money < sgkAmount ? '❌ Yetersiz Bakiye' : '✅ SGK Primini Öde'}
+      </button>
+    </div>
+  `);
+};
+
+window.SL_submitSGK = async function (amount) {
+  const uid = window.GZ?.uid;
+  if (!uid) return;
+
+  await window.db.ref('users/' + uid + '/money').transaction(m => Math.max(0, (m || 0) - amount));
+  await window.db.ref('users/' + uid + '/sgkLastPaid').set(Date.now());
+  await window.db.ref('txlog').push({ uid, desc: 'SGK primi ödemesi', amount: -amount, ts: Date.now() });
+
+  window.closeModal?.();
+  window.toast?.('✅ SGK primi ödendi! ' + (window.cashFmt || (n=>n+'₺'))(amount), 'success', 5000);
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. İL SEÇİMİ — HESAP AÇILIŞI
+   ══════════════════════════════════════════════════════════════════════════ */
+window.SL_showProvinceSelector = function () {
+  if (!window.GZ?.uid) return;
+  if (window.GZ?.data?.province && window.GZ.data.province !== 'İstanbul') return; // Zaten seçilmiş
+
+  const iller = [
+    'Adana','Adıyaman','Afyonkarahisar','Ağrı','Amasya','Ankara','Antalya','Artvin','Aydın','Balıkesir',
+    'Bilecik','Bingöl','Bitlis','Bolu','Burdur','Bursa','Çanakkale','Çankırı','Çorum','Denizli',
+    'Diyarbakır','Edirne','Elazığ','Erzincan','Erzurum','Eskişehir','Gaziantep','Giresun','Gümüşhane','Hakkari',
+    'Hatay','Isparta','İçel (Mersin)','İstanbul','İzmir','Kars','Kastamonu','Kayseri','Kırklareli','Kırşehir',
+    'Kocaeli','Konya','Kütahya','Malatya','Manisa','Kahramanmaraş','Mardin','Muğla','Muş','Nevşehir',
+    'Niğde','Ordu','Rize','Sakarya','Samsun','Siirt','Sinop','Sivas','Tekirdağ','Tokat',
+    'Trabzon','Tunceli','Şanlıurfa','Uşak','Van','Yozgat','Zonguldak','Aksaray','Bayburt','Karaman',
+    'Kırıkkale','Batman','Şırnak','Bartın','Ardahan','Iğdır','Yalova','Karabük','Kilis','Osmaniye','Düzce'
+  ];
+
+  const modal = document.createElement('div');
+  modal.id = 'provinceSelectorModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:#0d1a2e;border:1px solid #3b82f6;border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto">
+      <h3 style="color:#e2e8f0;margin:0 0 8px;font-size:18px;text-align:center">🗺️ İlin Seç</h3>
+      <p style="color:#94a3b8;font-size:13px;text-align:center;margin:0 0 20px">Hangi ilde yaşıyorsun? (Seçim ve yönetim sistemi için önemli)</p>
+      <input id="provSearch" placeholder="🔍 İl ara..." oninput="window.SL_filterProvs(this.value)"
+        style="width:100%;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px;margin-bottom:12px;box-sizing:border-box">
+      <div id="provList" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        ${iller.map(il => `
+          <button onclick="window.SL_setProvince('${il}')"
+            style="background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;padding:8px;color:#94a3b8;font-size:12px;cursor:pointer;transition:.15s"
+            onmouseover="this.style.background='#1e3a5f';this.style.color='#60a5fa'"
+            onmouseout="this.style.background='#080d1a';this.style.color='#94a3b8'">${il}</button>`).join('')}
+      </div>
+    </div>
   `;
-  document.head.appendChild(style);
+  document.body.appendChild(modal);
+};
+
+window.SL_filterProvs = function (q) {
+  const list = document.getElementById('provList');
+  if (!list) return;
+  list.querySelectorAll('button').forEach(b => {
+    b.style.display = b.textContent.toLowerCase().includes(q.toLowerCase()) ? 'block' : 'none';
+  });
+};
+
+window.SL_setProvince = async function (il) {
+  const uid = window.GZ?.uid;
+  if (!uid) return;
+  await window.db.ref('users/' + uid + '/province').set(il);
+  await window.db.ref('users/' + uid + '/location').set(il);
+  window.GZ.data = window.GZ.data || {};
+  window.GZ.data.province = il;
+  window.GZ.data.location = il;
+  document.getElementById('provinceSelectorModal')?.remove();
+  window.toast?.('✅ İlin ' + il + ' olarak ayarlandı!', 'success', 4000);
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   7. İL SEÇİCİYİ OYUN GİRİŞİNDE GÖSTER
+   ══════════════════════════════════════════════════════════════════════════ */
+(function waitForUser() {
+  const _pw = setInterval(function () {
+    if (!window.GZ?.uid || !window.GZ?.data) return;
+    clearInterval(_pw);
+
+    // İl seçilmemişse (veya varsayılan İstanbul ise yeni kullanıcı)
+    const d = window.GZ.data;
+    const createdAt = d.createdAt || 0;
+    const isNew = Date.now() - (typeof createdAt === 'number' ? createdAt : 0) < 120000; // 2 dakikadan yeni
+
+    if (isNew && (!d.province || d.province === 'İstanbul')) {
+      setTimeout(() => window.SL_showProvinceSelector?.(), 2000);
+    }
+  }, 1000);
 })();
 
-console.log('[system-logic.js] Yüklendi — window.initSystemLogic() hazır');
+/* ══════════════════════════════════════════════════════════════════════════
+   8. BORSA / KRİPTO OTOMATİK GÜNCELLEME
+   ══════════════════════════════════════════════════════════════════════════ */
+(function autoMarkets() {
+  let borsaInterval = null;
+  let kriptoInterval = null;
+
+  async function autoUpdateBorsa() {
+    try {
+      const autoMode = (await window.db?.ref('system/borsaAutoMode').once('value').then(s => s.val()));
+      if (!autoMode) return;
+      const prices = await window.db?.ref('borsaFiyatlar').once('value').then(s => s.val());
+      if (!prices) return;
+      const updates = {};
+      for (const [k, v] of Object.entries(prices)) {
+        const chg = (Math.random() * 0.04) - 0.02; // ±2%
+        updates['borsaFiyatlar/' + k] = Math.max(1, Math.round(v * (1 + chg)));
+      }
+      await window.db?.ref().update(updates);
+    } catch(e) {}
+  }
+
+  async function autoUpdateKripto() {
+    try {
+      const autoMode = await window.db?.ref('system/kriptoAutoMode').once('value').then(s => s.val());
+      if (!autoMode) return;
+      const prices = await window.db?.ref('kriptoPrices').once('value').then(s => s.val());
+      if (!prices) return;
+      const updates = {};
+      for (const [k, v] of Object.entries(prices)) {
+        const chg = (Math.random() * 0.06) - 0.03; // ±3%
+        updates['kriptoPrices/' + k] = Math.max(1, Math.round(v * (1 + chg)));
+      }
+      await window.db?.ref().update(updates);
+    } catch(e) {}
+  }
+
+  // Her 5 dakikada bir otomatik güncelle (sadece admin açmışsa)
+  const _mWait = setInterval(function () {
+    if (!window.db) return;
+    clearInterval(_mWait);
+    borsaInterval = setInterval(autoUpdateBorsa, 5 * 60 * 1000);
+    kriptoInterval = setInterval(autoUpdateKripto, 3 * 60 * 1000);
+  }, 2000);
+
+  window.SL_stopAutoMarkets = function () {
+    if (borsaInterval) clearInterval(borsaInterval);
+    if (kriptoInterval) clearInterval(kriptoInterval);
+  };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9. SATIŞ SİSTEMİ DÜZELTMESİ — Reyon stok kontrolü
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// Satış için reyon stok kontrolü
+window.SL_checkStock = async function (ownerUid, dukkanKey, reyonKey) {
+  const stok = await window.db?.ref(`users/${ownerUid}/dukkanlar/${dukkanKey}/reyonlar/${reyonKey}/stok`).once('value').then(s => s.val());
+  return (stok || 0) > 0;
+};
+
+// Reyon dolum (robot veya manuel)
+window.SL_fillReyon = async function (ownerUid, dukkanKey, reyonKey, amount) {
+  amount = amount || 100;
+  const urun = await window.db?.ref(`users/${ownerUid}/dukkanlar/${dukkanKey}/reyonlar/${reyonKey}`).once('value').then(s => s.val());
+  if (!urun) return false;
+
+  const cost = (urun.basePrice || 10) * amount * 0.6; // maliyet
+  const money = await window.db?.ref(`users/${ownerUid}/money`).once('value').then(s => s.val()) || 0;
+  if (money < cost) return false;
+
+  await window.db?.ref(`users/${ownerUid}/money`).transaction(m => Math.max(0, (m || 0) - cost));
+  await window.db?.ref(`users/${ownerUid}/dukkanlar/${dukkanKey}/reyonlar/${reyonKey}/stok`).set(amount);
+  await window.db?.ref(`users/${ownerUid}/dukkanlar/${dukkanKey}/reyonlar/${reyonKey}/lastRefill`).set(Date.now());
+  return true;
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. GAYRİMENKUL OTOMATİK GÜNCELLEME (saatte bir yeni ilan)
+   ══════════════════════════════════════════════════════════════════════════ */
+(function autoGayrimenkul() {
+  const _gWait = setInterval(function () {
+    if (!window.db) return;
+    clearInterval(_gWait);
+
+    async function refreshListings() {
+      try {
+        // Son güncelleme zamanı
+        const lastUpdate = await window.db.ref('gayrimenkul/lastAutoUpdate').once('value').then(s => s.val());
+        if (lastUpdate && Date.now() - lastUpdate < 3600000) return; // 1 saatten yeni
+
+        const iller = ['İstanbul','Ankara','İzmir','Bursa','Antalya','Samsun','Gaziantep','Konya'];
+        const tipler = [
+          { type: 'Daire', emoji: '🏢', rooms: ['1+1','2+1','3+1','4+1'], basePrice: 2500000 },
+          { type: 'Villa', emoji: '🏡', rooms: ['3+1','4+2','5+2'], basePrice: 8000000 },
+          { type: 'Arsa', emoji: '🌿', rooms: ['500m²','1000m²','2000m²'], basePrice: 1000000 },
+          { type: 'İşyeri', emoji: '🏪', rooms: ['50m²','100m²','200m²'], basePrice: 3000000 },
+        ];
+
+        const listings = {};
+        for (let i = 0; i < 12; i++) {
+          const tip = tipler[Math.floor(Math.random() * tipler.length)];
+          const il = iller[Math.floor(Math.random() * iller.length)];
+          const rooms = tip.rooms[Math.floor(Math.random() * tip.rooms.length)];
+          const price = Math.round(tip.basePrice * (0.7 + Math.random() * 0.9));
+          const key = 'listing_' + Date.now() + '_' + i;
+
+          listings[key] = {
+            type: tip.type,
+            emoji: tip.emoji,
+            rooms,
+            province: il,
+            price,
+            listedAt: Date.now(),
+            expiresAt: Date.now() + 3600000,
+            owner: 'sistem',
+            available: true
+          };
+        }
+
+        await window.db.ref('gayrimenkul/listings').update(listings);
+        await window.db.ref('gayrimenkul/lastAutoUpdate').set(Date.now());
+
+        // Süresi dolmuş ilanları temizle
+        const all = await window.db.ref('gayrimenkul/listings').once('value').then(s => s.val()) || {};
+        const now = Date.now();
+        const removals = {};
+        for (const [k, v] of Object.entries(all)) {
+          if (v.expiresAt && v.expiresAt < now) removals['gayrimenkul/listings/' + k] = null;
+        }
+        if (Object.keys(removals).length) await window.db.ref().update(removals);
+
+      } catch(e) { console.warn('[AutoGayrimenkul]', e); }
+    }
+
+    refreshListings();
+    setInterval(refreshListings, 3600000); // Her saat
+  }, 3000);
+})();
+
+console.log('[SystemLogic] ✅ system-logic.js yüklendi');

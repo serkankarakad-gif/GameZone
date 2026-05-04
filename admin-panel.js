@@ -1,4415 +1,1757 @@
-/* ╔══════════════════════════════════════════════════════════════════════════╗
-   ║                                                                          ║
-   ║   👑 GAMEZONE ADMİN PANELİ v4.0 — TAM YETKİ MERKEZİ                     ║
-   ║                                                                          ║
-   ║   380 ÖZELLİK — Dashboard · Kullanıcı · Ekonomi · Oyun ·               ║
-   ║   İletişim · İşletme · Güvenlik · Sistem · Analitik · Tema              ║
-   ║                                                                          ║
-   ║   GİRİŞ: ⚡ Yetkili sekmesi → e-posta + şifre + serkan2026             ║
-   ║   E-POSTA: Kaynak kodda görünmez (4 katman hash)                        ║
-   ║                                                                          ║
-   ╚══════════════════════════════════════════════════════════════════════════╝ */
+/* ============================================================================
+   admin-panel.js — GameZone ERP: Ana Admin Paneli v2.0
+   window.AP objesini kurar → giris.js ve admin-yonetim.js bu objeyi bekler
+   ============================================================================ */
+'use strict';
 
-(function AdminPanel() {
-  'use strict';
+(function () {
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 0: CORE HELPERS & YETKİ KONTROL
-     ══════════════════════════════════════════════════════════════════════════ */
-  const db  = () => firebase.database();
-  const TS  = () => firebase.database.ServerValue.TIMESTAMP;
-  const uid = () => firebase.auth().currentUser?.uid;
+  /* ──────────────────────────────────────────────────────────────────────
+     YARDIMCI FONKSİYONLAR
+  ────────────────────────────────────────────────────────────────────── */
+  function dbGet(p) { return window.db.ref(p).once('value').then(s => s.val()); }
+  function dbSet(p, v) { return window.db.ref(p).set(v); }
+  function dbUpd(p, o) { return window.db.ref(p).update(o); }
+  function dbPush(p, v) { return window.db.ref(p).push(v); }
+  function body() { return document.getElementById('adminScreenBody'); }
+  function fmt(n) { return (typeof cashFmt === 'function') ? cashFmt(n) : (Number(n) || 0).toLocaleString('tr-TR') + ' ₺'; }
+  function ts(t) { return t ? new Date(t).toLocaleString('tr-TR') : '-'; }
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-  /* ─── E-posta hash kontrolü (4 katman, kaynak kodda e-posta YOK) ─── */
-  function _isAdminEmail(em) {
-    if (!em || typeof em !== 'string') return false;
-    const e = em.trim().toLowerCase();
-    const h = [...e].reduce((a, c) => a + c.charCodeAt(0), 0);
-    let x = 0; for (let i = 0; i < e.length; i++) x = ((x << 3) - x + e.charCodeAt(i)) & 0xFFFF;
-    let m = 1; for (let i = 0; i < e.length; i++) m = (m * 31 + e.charCodeAt(i)) & 0x7FFFFFFF;
-    return h === 1908 && e.length === 20 && x === 64726 && m === 2009737551
-        && e.charCodeAt(0) === 115 && e.charCodeAt(19) === 109;
-  }
-
-  /* ─── DB Helpers ─── */
-  const _get    = p => db().ref(p).once('value').then(s => s.val());
-  const _set    = (p, v) => db().ref(p).set(v);
-  const _upd    = (p, o) => db().ref(p).update(o);
-  const _push   = (p, v) => db().ref(p).push(v);
-  const _rm     = p => db().ref(p).remove();
-  const _tx     = (p, fn) => db().ref(p).transaction(fn);
-  const _nowTs  = () => Date.now();
-
-  /* ─── Güvenli sayı ─── */
-  const safeNum = (v, def = 0) => (isFinite(v) && !isNaN(v)) ? Number(v) : def;
-
-  /* ─── Admin log ─── */
-  async function _adminLog(action, details = {}) {
-    try {
-      await _push('adminLogs', {
-        ts: TS(), adminUid: uid() || 'system',
-        action, details: JSON.stringify(details).slice(0, 500)
-      });
-    } catch(e) {}
-  }
-
-  /* ─── Toast helper ─── */
-  function _toast(msg, kind = 'success', ms = 3500) {
-    if (typeof window.toast === 'function') window.toast(msg, kind, ms);
-    else alert((kind === 'error' ? '❌ ' : '✅ ') + msg);
-  }
-
-  /* ─── Modal helper ─── */
-  function _modal(title, html, wide = false) {
-    if (typeof window.showModal === 'function') {
-      window.showModal(title, html, wide);
-    } else {
-      const m = document.getElementById('adminModal');
-      if (m) { m.querySelector('.admin-modal-title').textContent = title; m.querySelector('.admin-modal-body').innerHTML = html; m.style.display = 'flex'; }
-    }
-  }
-  function _closeModal() {
-    if (typeof window.closeModal === 'function') window.closeModal();
-    const m = document.getElementById('adminModal');
-    if (m) m.style.display = 'none';
-  }
-
-  /* ─── cashFmt helper ─── */
-  const _fmt = n => new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY', minimumFractionDigits:0 }).format(n || 0);
-
-  /* ─── Tablo render helper ─── */
-  function _table(cols, rows, actions = '') {
-    return `<div class="admin-table-wrap">
-      <table class="admin-table">
-        <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}${actions?'<th>İşlem</th>':''}</tr></thead>
-        <tbody>${rows.map(r => `<tr>${r.map(c=>`<td>${c??''}</td>`).join('')}${actions?`<td>${actions}</td>`:''}</tr>`).join('')}</tbody>
-      </table>
+  function card(title, value, sub, color) {
+    return `<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:18px;text-align:center">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#475569;margin-bottom:6px">${title}</div>
+      <div style="font-size:24px;font-weight:900;color:${color || '#e2e8f0'}">${value}</div>
+      ${sub ? `<div style="font-size:10px;color:#334155;margin-top:4px">${sub}</div>` : ''}
     </div>`;
   }
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 1: ANA DASHBOARD (25 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-  async function renderDashboard() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = '<div class="admin-loading">📊 Dashboard yükleniyor...</div>';
+  function section(title, html) {
+    return `<div style="padding:24px;max-width:1400px;margin:0 auto">
+      <h2 style="color:#e2e8f0;margin:0 0 20px;font-size:20px;font-weight:800;padding-bottom:12px;border-bottom:1px solid #1a2f4a">${title}</h2>
+      ${html}
+    </div>`;
+  }
 
+  function btn(label, onclick, color, extra) {
+    return `<button onclick="${onclick}" style="background:${color || '#3b82f6'};color:#fff;border:none;
+      border-radius:8px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer;${extra || ''}">${label}</button>`;
+  }
+
+  function inp(id, ph, type, val) {
+    return `<input id="${id}" type="${type || 'text'}" placeholder="${ph}" value="${esc(val || '')}"
+      style="flex:1;padding:10px 12px;background:#080d1a;border:1px solid #1a2f4a;
+      border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">`;
+  }
+
+  function loading(msg) {
+    if (body()) body().innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px">
+      <div style="width:40px;height:40px;border:4px solid #1a2f4a;border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite"></div>
+      <div style="color:#64748b;font-size:14px">${msg || 'Yükleniyor...'}</div>
+    </div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+  }
+
+  function grid3(items) { return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">${items.join('')}</div>`; }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     NAV DURUMU
+  ────────────────────────────────────────────────────────────────────── */
+  let _activeSection = 'dashboard';
+
+  /* ──────────────────────────────────────────────────────────────────────
+     DASHBOARD
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderDashboard() {
+    loading('Dashboard yükleniyor...');
     try {
-      const [usersSnap, bankSnap, cryptoSnap, stocksSnap, marketSnap, auctionSnap, txSnap, secSnap] = await Promise.all([
-        _get('users'), _get('bank'), _get('crypto/holdings'), _get('stocks/holdings'),
-        _get('playerMarket'), _get('auctions'), _get('txLog'), _get('security/founderAttempts')
+      const [users, systemData, borsaData, bankData] = await Promise.all([
+        dbGet('users'),
+        dbGet('system'),
+        dbGet('borsa'),
+        dbGet('bank')
       ]);
 
-      const users = usersSnap || {};
-      const uids  = Object.keys(users);
-      const now   = Date.now();
-      const day   = 24 * 3600 * 1000;
+      const userList = users ? Object.entries(users) : [];
+      const totalUsers = userList.length;
+      const onlineUsers = userList.filter(([,u]) => u?.online).length;
+      const bannedUsers = userList.filter(([,u]) => u?.banned).length;
+      const totalMoney = userList.reduce((s, [,u]) => s + (u?.money || 0), 0);
+      const inflation = systemData?.inflation || 0;
+      const repoRate = bankData?.repoRate || 0;
 
-      // Hesapla
-      const totalUsers    = uids.length;
-      const onlineUsers   = uids.filter(u => users[u].online === true).length;
-      const todayNew      = uids.filter(u => users[u].createdAt && (now - users[u].createdAt) < day).length;
-      const weekActive    = uids.filter(u => users[u].lastLogin && (now - users[u].lastLogin) < 7*day).length;
-      const bannedCount   = uids.filter(u => users[u].banned === true).length;
-      const frozenCount   = uids.filter(u => users[u].frozen === true).length;
-      const vipCount      = uids.filter(u => users[u].isVip === true).length;
-      const adminCount    = uids.filter(u => users[u].isFounder === true).length;
+      // Son 10 işlem
+      const txSnap = await window.db.ref('txlog').orderByChild('ts').limitToLast(10).once('value');
+      const txs = [];
+      txSnap.forEach(c => txs.unshift({ ...c.val(), key: c.key }));
 
-      const totalMoney    = uids.reduce((s, u) => s + (users[u].money || 0), 0);
-      const totalDiamonds = uids.reduce((s, u) => s + (users[u].diamonds || 0), 0);
-      const avgLevel      = totalUsers ? (uids.reduce((s, u) => s + (users[u].level || 1), 0) / totalUsers).toFixed(1) : 0;
-      const avgMoney      = totalUsers ? Math.floor(totalMoney / totalUsers) : 0;
+      body().innerHTML = section('📊 Admin Dashboard', `
+        ${grid3([
+          card('TOPLAM KULLANICI', totalUsers, null, '#60a5fa'),
+          card('ÇEVRİMİÇİ', onlineUsers, null, '#22c55e'),
+          card('BANLI', bannedUsers, null, '#ef4444'),
+          card('SİSTEM PARASİ', fmt(totalMoney), 'tüm oyuncuların toplam parası', '#f59e0b'),
+          card('ENFLASYON', '%' + (inflation * 100).toFixed(1), null, inflation > 0.3 ? '#ef4444' : '#22c55e'),
+          card('REPO ORANI', '%' + ((repoRate || 0) * 100).toFixed(1), null, '#a78bfa'),
+        ])}
 
-      // Banka toplamı
-      const bankData = bankSnap || {};
-      let totalBank = 0, totalInvest = 0, totalDebt = 0;
-      Object.values(bankData).forEach(b => {
-        totalBank    += b.balance    || 0;
-        totalInvest  += b.investment || 0;
-        totalDebt    += b.loan       || 0;
-      });
-
-      // Aktif ilanlar
-      const activeListings = Object.values(marketSnap || {}).filter(l => l && l.remaining > 0).length;
-      const activeAuctions = Object.keys(auctionSnap || {}).length;
-
-      // Admin giriş denemeleri
-      const attempts = Object.values(secSnap || {});
-      const failedAttempts = attempts.filter(a => !a.success).length;
-
-      // Top 5 zengin
-      const richList = uids.sort((a, b) => (users[b].money || 0) - (users[a].money || 0)).slice(0, 5);
-      // Top 5 seviye
-      const levelList = uids.sort((a, b) => (users[b].level || 1) - (users[a].level || 1)).slice(0, 5);
-
-      panel.innerHTML = `
-        <div class="admin-section">
-          <h2 class="admin-section-title">📊 Canlı Dashboard</h2>
-          <div class="admin-refresh-bar">
-            <button class="admin-btn-sm" onclick="window.AP.renderDashboard()">🔄 Yenile</button>
-            <span class="admin-muted">Son güncelleme: ${new Date().toLocaleTimeString('tr-TR')}</span>
-          </div>
-
-          <!-- STAT KARTLARI -->
-          <div class="admin-stats-grid">
-            <div class="admin-stat-card blue">
-              <div class="asc-icon">👥</div>
-              <div class="asc-num">${totalUsers.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Toplam Oyuncu</div>
-            </div>
-            <div class="admin-stat-card green">
-              <div class="asc-icon">🟢</div>
-              <div class="asc-num">${onlineUsers.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Şu An Online</div>
-            </div>
-            <div class="admin-stat-card yellow">
-              <div class="asc-icon">🆕</div>
-              <div class="asc-num">${todayNew.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Bugün Kayıt</div>
-            </div>
-            <div class="admin-stat-card purple">
-              <div class="asc-icon">📅</div>
-              <div class="asc-num">${weekActive.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Haftalık Aktif</div>
-            </div>
-            <div class="admin-stat-card gold">
-              <div class="asc-icon">💰</div>
-              <div class="asc-num">${_fmt(totalMoney)}</div>
-              <div class="asc-lbl">Toplam Para</div>
-            </div>
-            <div class="admin-stat-card teal">
-              <div class="asc-icon">💎</div>
-              <div class="asc-num">${totalDiamonds.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Toplam Elmas</div>
-            </div>
-            <div class="admin-stat-card blue">
-              <div class="asc-icon">🏦</div>
-              <div class="asc-num">${_fmt(totalBank + totalInvest)}</div>
-              <div class="asc-lbl">Toplam Banka</div>
-            </div>
-            <div class="admin-stat-card red">
-              <div class="asc-icon">💳</div>
-              <div class="asc-num">${_fmt(totalDebt)}</div>
-              <div class="asc-lbl">Toplam Borç</div>
-            </div>
-            <div class="admin-stat-card orange">
-              <div class="asc-icon">🛒</div>
-              <div class="asc-num">${activeListings.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Aktif İlan</div>
-            </div>
-            <div class="admin-stat-card purple">
-              <div class="asc-icon">⚖️</div>
-              <div class="asc-num">${activeAuctions.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Aktif İhale</div>
-            </div>
-            <div class="admin-stat-card red">
-              <div class="asc-icon">🚫</div>
-              <div class="asc-num">${bannedCount.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Banlı Oyuncu</div>
-            </div>
-            <div class="admin-stat-card yellow">
-              <div class="asc-icon">🔒</div>
-              <div class="asc-num">${frozenCount.toLocaleString('tr-TR')}</div>
-              <div class="asc-lbl">Dondurulmuş</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+          <!-- Hızlı Eylemler -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:14px;font-weight:700">⚡ Hızlı Eylemler</h3>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              ${btn('💰 Herkese Para Ver', 'window.AP._quickMoney()', '#16a34a')}
+              ${btn('📢 Duyuru Yayınla', 'window.AP.navTo(null,\"news\")', '#7c3aed')}
+              ${btn('📈 Borsa Güncelle', 'window.AP.navTo(null,\"borsa\")', '#0891b2')}
+              ${btn('🏦 Repo Oranı Ayarla', 'window.AP.navTo(null,\"merkez\")', '#ea580c')}
+              ${btn('👥 Kullanıcılar', 'window.AP.navTo(null,\"users\")', '#334155')}
+              ${btn('🔄 Dashboard Yenile', 'window.AP.renderDashboard()', '#1e3a5f')}
             </div>
           </div>
 
-          <!-- EKONOMİ ÖZET -->
-          <div class="admin-row-2">
-            <div class="admin-card">
-              <h3>💹 Ekonomi Özeti</h3>
-              <table class="admin-mini-table">
-                <tr><td>Ortalama Seviye</td><td><b>${avgLevel}</b></td></tr>
-                <tr><td>Ortalama Para</td><td><b>${_fmt(avgMoney)}</b></td></tr>
-                <tr><td>VIP Oyuncu</td><td><b>${vipCount}</b></td></tr>
-                <tr><td>Admin/Kurucu</td><td><b>${adminCount}</b></td></tr>
-                <tr><td>Toplam Yatırım</td><td><b>${_fmt(totalInvest)}</b></td></tr>
-                <tr><td>Admin Giriş Denemesi</td><td><b>${attempts.length} (${failedAttempts} başarısız)</b></td></tr>
-              </table>
-            </div>
-
-            <div class="admin-card">
-              <h3>👑 En Zengin 5</h3>
-              ${richList.map((u, i) => `
-                <div class="admin-user-row" onclick="window.AP.openUserDetail('${u}')">
-                  <span class="rank">${i+1}.</span>
-                  <span class="uname">${users[u].username || '?'}</span>
-                  <span class="umoney">${_fmt(users[u].money || 0)}</span>
-                </div>`).join('')}
-            </div>
-
-            <div class="admin-card">
-              <h3>🏅 En Yüksek Seviye 5</h3>
-              ${levelList.map((u, i) => `
-                <div class="admin-user-row" onclick="window.AP.openUserDetail('${u}')">
-                  <span class="rank">${i+1}.</span>
-                  <span class="uname">${users[u].username || '?'}</span>
-                  <span class="ulevel">Lv ${users[u].level || 1}</span>
-                </div>`).join('')}
+          <!-- Son İşlemler -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:14px;font-weight:700">🔍 Son İşlemler</h3>
+            <div style="max-height:200px;overflow-y:auto">
+              ${txs.length ? txs.map(tx => `
+                <div style="border-bottom:1px solid #1a2f4a;padding:8px 0;font-size:11px;display:flex;justify-content:space-between;gap:8px">
+                  <span style="color:#94a3b8">${esc(tx.desc || tx.type || '?')}</span>
+                  <span style="color:${(tx.amount||0) >= 0 ? '#22c55e' : '#ef4444'};font-weight:700;white-space:nowrap">${fmt(tx.amount || 0)}</span>
+                </div>`).join('') : '<div style="color:#334155;font-size:12px">İşlem yok</div>'}
             </div>
           </div>
+        </div>
 
-          <!-- HIZLI İŞLEMLER -->
-          <div class="admin-card">
-            <h3>⚡ Hızlı İşlemler</h3>
-            <div class="admin-quick-actions">
-              <button class="admin-btn green" onclick="window.AP.openBroadcastModal()">📢 Duyuru Yayınla</button>
-              <button class="admin-btn red" onclick="window.AP.toggleMaintModal()">🔧 Bakım Modu</button>
-              <button class="admin-btn blue" onclick="window.AP.openUserSearch()">🔍 Kullanıcı Ara</button>
-              <button class="admin-btn yellow" onclick="window.AP.openGlobalEconModal()">💰 Global Ekonomi</button>
-              <button class="admin-btn purple" onclick="window.AP.openEventModal()">🎉 Etkinlik Başlat</button>
-              <button class="admin-btn teal" onclick="window.AP.openBulkNotifModal()">📨 Toplu Bildirim</button>
-              <button class="admin-btn orange" onclick="window.AP.openAllUsersModal()">👥 Tüm Kullanıcılar</button>
-              <button class="admin-btn red" onclick="window.AP.openSecurityLogs()">🛡️ Güvenlik Logları</button>
-            </div>
+        <!-- Kullanıcı Listesi Özeti -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:14px;font-weight:700">👥 Aktif Kullanıcılar (İlk 20)</h3>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="color:#475569;border-bottom:1px solid #1a2f4a">
+                <th style="text-align:left;padding:8px">Kullanıcı</th>
+                <th style="text-align:right;padding:8px">Seviye</th>
+                <th style="text-align:right;padding:8px">Para</th>
+                <th style="text-align:center;padding:8px">Durum</th>
+                <th style="text-align:center;padding:8px">İşlem</th>
+              </tr></thead>
+              <tbody>
+                ${userList.slice(0, 20).map(([uid, u]) => `
+                  <tr style="border-bottom:1px solid #0d1a2e;color:#94a3b8">
+                    <td style="padding:8px"><span style="color:#e2e8f0;font-weight:600">${esc(u?.username || uid.slice(0, 8))}</span></td>
+                    <td style="padding:8px;text-align:right">Lv${u?.level || 1}</td>
+                    <td style="padding:8px;text-align:right;color:#f59e0b">${fmt(u?.money || 0)}</td>
+                    <td style="padding:8px;text-align:center">
+                      <span style="color:${u?.banned ? '#ef4444' : (u?.online ? '#22c55e' : '#475569')}">
+                        ${u?.banned ? '🚫 Banlı' : (u?.online ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı')}
+                      </span>
+                    </td>
+                    <td style="padding:8px;text-align:center">
+                      <button onclick="window.AP._viewUser('${uid}')" style="background:#1e3a5f;color:#60a5fa;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">Detay</button>
+                      ${u?.banned
+                        ? `<button onclick="window.AP._unbanUser('${uid}')" style="background:#16a34a22;color:#22c55e;border:1px solid #16a34a;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-left:4px">Bansız</button>`
+                        : `<button onclick="window.AP._banUser('${uid}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-left:4px">Ban</button>`
+                      }
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
           </div>
-        </div>`;
-
-    } catch(e) {
-      panel.innerHTML = `<div class="admin-error">❌ Dashboard yüklenemedi: ${e.message}</div>`;
+        </div>
+      `);
+    } catch (e) {
+      body().innerHTML = `<div style="padding:24px;color:#ef4444">Dashboard yükleme hatası: ${esc(e.message)}</div>`;
     }
   }
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 2: KULLANICI YÖNETİMİ (65 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
+  /* ──────────────────────────────────────────────────────────────────────
+     KULLANICI YÖNETİMİ
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderUsers(search) {
+    loading('Kullanıcılar yükleniyor...');
+    try {
+      const users = await dbGet('users');
+      const list = users ? Object.entries(users) : [];
+      const filtered = search
+        ? list.filter(([, u]) => (u?.username || '').toLowerCase().includes(search.toLowerCase()))
+        : list;
 
-  /* Kullanıcı Arama */
-  function openUserSearch() {
-    _modal('🔍 Kullanıcı Ara', `
-      <div class="admin-search-box">
-        <div class="admin-filter-row">
-          <input type="text" id="usrQ" placeholder="Kullanıcı adı, UID veya e-posta..." class="admin-input">
-          <button class="admin-btn blue" onclick="window.AP._searchUsers()">Ara</button>
+      body().innerHTML = section('👥 Kullanıcı Yönetimi', `
+        <div style="display:flex;gap:10px;margin-bottom:16px">
+          ${inp('userSearch', '🔍 Kullanıcı adı ara...', 'text', search)}
+          ${btn('Ara', 'window.AP._searchUsers()', '#3b82f6')}
+          ${btn('Tüm Kullanıcılar', 'window.AP._searchUsers(\"\")', '#334155')}
         </div>
-        <div class="admin-filter-row">
-          <select id="usrFilter" class="admin-select">
-            <option value="all">Tüm Kullanıcılar</option>
-            <option value="banned">Banlılar</option>
-            <option value="frozen">Donmuşlar</option>
-            <option value="vip">VIP</option>
-            <option value="admin">Adminler</option>
-            <option value="active">Son 7 gün aktif</option>
-            <option value="inactive">14+ gün inaktif</option>
-          </select>
-          <input type="number" id="usrLvMin" placeholder="Min Seviye" class="admin-input-sm">
-          <input type="number" id="usrLvMax" placeholder="Max Seviye" class="admin-input-sm">
-          <button class="admin-btn yellow" onclick="window.AP._filterUsers()">Filtrele</button>
-        </div>
-      </div>
-      <div id="usrResults" class="admin-user-results"></div>
-    `, true);
-  }
-
-  async function _searchUsers() {
-    const q = document.getElementById('usrQ')?.value?.trim()?.toLowerCase() || '';
-    const snap = await _get('users');
-    const users = snap || {};
-    let results = Object.entries(users).filter(([uid, u]) =>
-      !q || (u.username||'').toLowerCase().includes(q) ||
-             uid.includes(q) ||
-             (u.email||'').toLowerCase().includes(q)
-    ).slice(0, 50);
-    _renderUserResults(results, users);
-  }
-
-  async function _filterUsers() {
-    const filter = document.getElementById('usrFilter')?.value;
-    const lvMin  = safeNum(document.getElementById('usrLvMin')?.value, 0);
-    const lvMax  = safeNum(document.getElementById('usrLvMax')?.value, 999);
-    const snap   = await _get('users');
-    const users  = snap || {};
-    const now    = Date.now();
-    const day    = 24 * 3600 * 1000;
-
-    let results = Object.entries(users).filter(([uid, u]) => {
-      const lv = u.level || 1;
-      if (lv < lvMin || lv > lvMax) return false;
-      if (filter === 'banned')   return u.banned === true;
-      if (filter === 'frozen')   return u.frozen === true;
-      if (filter === 'vip')      return u.isVip === true;
-      if (filter === 'admin')    return u.isFounder === true;
-      if (filter === 'active')   return u.lastLogin && (now - u.lastLogin) < 7*day;
-      if (filter === 'inactive') return !u.lastLogin || (now - u.lastLogin) > 14*day;
-      return true;
-    }).slice(0, 100);
-    _renderUserResults(results, users);
-  }
-
-  function _renderUserResults(results, allUsers) {
-    const div = document.getElementById('usrResults');
-    if (!div) return;
-    if (!results.length) { div.innerHTML = '<p class="admin-muted">Sonuç yok</p>'; return; }
-    div.innerHTML = `<p class="admin-muted">${results.length} sonuç</p>
-    <div class="admin-user-list">
-      ${results.map(([id, u]) => `
-        <div class="admin-user-item" onclick="window.AP.openUserDetail('${id}')">
-          <div class="aui-avatar">${u.avatar ? u.avatar : '👤'}</div>
-          <div class="aui-info">
-            <div class="aui-name">${u.username||'İsimsiz'}
-              ${u.banned ? '<span class="badge-red">BANLANDI</span>' : ''}
-              ${u.frozen ? '<span class="badge-blue">DONDURULDU</span>' : ''}
-              ${u.isFounder ? '<span class="badge-gold">ADMİN</span>' : ''}
-              ${u.isVip ? '<span class="badge-purple">VIP</span>' : ''}
-            </div>
-            <div class="aui-meta">Lv ${u.level||1} · ${_fmt(u.money||0)} · ${u.diamonds||0}💎</div>
-          </div>
-          <div class="aui-uid">${id.slice(0,8)}...</div>
-        </div>
-      `).join('')}
-    </div>`;
-  }
-
-  /* Kullanıcı Detay Sayfası */
-  async function openUserDetail(targetUid) {
-    _modal('👤 Kullanıcı Detayı', '<div class="admin-loading">Yükleniyor...</div>', true);
-    const [userData, bankData, cryptoData, stockData, txData] = await Promise.all([
-      _get('users/' + targetUid),
-      _get('bank/' + targetUid),
-      _get('crypto/holdings/' + targetUid),
-      _get('stocks/holdings/' + targetUid),
-      _get('txLog/' + targetUid)
-    ]);
-
-    const u = userData || {};
-    const b = bankData  || { balance:0, investment:0, loan:0 };
-    const txList = Object.values(txData || {}).sort((a,b_) => (b_.ts||0) - (a.ts||0)).slice(0, 20);
-
-    const modal = document.querySelector('.modal-content') || document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!modal) return;
-
-    const html = `
-      <div class="admin-user-detail">
-
-        <!-- PROFIL BAŞLIK -->
-        <div class="aud-header" style="background:${u.bannerColor||'#3b82f6'}">
-          <div class="aud-avatar">${u.avatar || '👤'}</div>
-          <div class="aud-name">${u.username || 'İsimsiz'}
-            ${u.banned ? '<span class="badge-red">BANLANDI</span>' : ''}
-            ${u.frozen ? '<span class="badge-blue">DONDURULDU</span>' : ''}
-            ${u.isFounder ? '<span class="badge-gold">👑 ADMİN</span>' : ''}
-          </div>
-          <div class="aud-uid">${targetUid}</div>
-        </div>
-
-        <!-- TEMEL BİLGİLER -->
-        <div class="aud-grid">
-          <div class="aud-card">
-            <h4>📋 Temel Bilgiler</h4>
-            <table class="admin-mini-table">
-              <tr><td>Kullanıcı Adı</td><td><b>${u.username||'—'}</b></td></tr>
-              <tr><td>Seviye</td><td><b>Lv ${u.level||1}</b></td></tr>
-              <tr><td>XP</td><td><b>${(u.xp||0).toLocaleString('tr-TR')}</b></td></tr>
-              <tr><td>Prestij</td><td><b>${u.prestige||0}</b></td></tr>
-              <tr><td>Kayıt Tarihi</td><td><b>${u.createdAt ? new Date(u.createdAt).toLocaleDateString('tr-TR') : '?'}</b></td></tr>
-              <tr><td>Son Giriş</td><td><b>${u.lastLogin ? new Date(u.lastLogin).toLocaleDateString('tr-TR') : '?'}</b></td></tr>
-              <tr><td>Aktif Pet</td><td><b>${u.activePet || '—'}</b></td></tr>
-              <tr><td>Unvan</td><td><b>${u.title || '—'}</b></td></tr>
-            </table>
-          </div>
-
-          <div class="aud-card">
-            <h4>💰 Ekonomi</h4>
-            <table class="admin-mini-table">
-              <tr><td>Para (Cüzdan)</td><td><b>${_fmt(u.money||0)}</b></td></tr>
-              <tr><td>Elmas</td><td><b>${u.diamonds||0} 💎</b></td></tr>
-              <tr><td>Banka Bakiyesi</td><td><b>${_fmt(b.balance||0)}</b></td></tr>
-              <tr><td>Yatırım</td><td><b>${_fmt(b.investment||0)}</b></td></tr>
-              <tr><td>Borç</td><td><b style="color:#dc2626">${_fmt(b.loan||0)}</b></td></tr>
-              <tr><td>Net Değer</td><td><b>${_fmt(u.netWorth||0)}</b></td></tr>
-              <tr><td>Haftalık Gelir</td><td><b>${_fmt(u.weeklyRevenue||0)}</b></td></tr>
-            </table>
-          </div>
-
-          <div class="aud-card">
-            <h4>🔒 Durum & Güvenlik</h4>
-            <table class="admin-mini-table">
-              <tr><td>Ban Durumu</td><td><b style="color:${u.banned?'#dc2626':'#16a34a'}">${u.banned?'BANLANDI':'Aktif'}</b></td></tr>
-              <tr><td>Ban Sebebi</td><td><b>${u.banReason||'—'}</b></td></tr>
-              <tr><td>Dondurulmuş</td><td><b>${u.frozen?'EVET':'Hayır'}</b></td></tr>
-              <tr><td>VIP</td><td><b>${u.isVip?'✅ VIP':'—'}</b></td></tr>
-              <tr><td>Admin</td><td><b>${u.isFounder?'✅ ADMİN':'—'}</b></td></tr>
-            </table>
-          </div>
-        </div>
-
-        <!-- ADMIN İŞLEM BUTONLARI -->
-        <div class="aud-actions">
-          <h4>⚡ Kullanıcıya Uygula</h4>
-          <div class="aud-btn-grid">
-            <div class="aud-action-group">
-              <h5>💰 Para / Ekonomi</h5>
-              <div class="aud-input-row">
-                <input type="number" id="au_money" placeholder="₺ Tutar" class="admin-input-sm">
-                <button class="admin-btn green" onclick="window.AP.userGrantMoney('${targetUid}')">+Para Ver</button>
-                <button class="admin-btn red" onclick="window.AP.userRemoveMoney('${targetUid}')">-Para Al</button>
-              </div>
-              <div class="aud-input-row">
-                <input type="number" id="au_diamond" placeholder="💎 Elmas" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.userGrantDiamond('${targetUid}')">+Elmas Ver</button>
-                <button class="admin-btn orange" onclick="window.AP.userRemoveDiamond('${targetUid}')">-Elmas Al</button>
-              </div>
-              <div class="aud-input-row">
-                <input type="number" id="au_xp" placeholder="XP Miktarı" class="admin-input-sm">
-                <button class="admin-btn purple" onclick="window.AP.userGrantXP('${targetUid}')">+XP Ver</button>
-              </div>
-              <div class="aud-input-row">
-                <input type="number" id="au_level" placeholder="Seviye (1-100)" min="1" max="100" class="admin-input-sm">
-                <button class="admin-btn teal" onclick="window.AP.userSetLevel('${targetUid}')">Seviye Ayarla</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn yellow" onclick="window.AP.userResetDebt('${targetUid}')">💳 Borcu Sıfırla</button>
-                <button class="admin-btn teal" onclick="window.AP.userResetCrypto('${targetUid}')">📈 Kripto Sıfırla</button>
-                <button class="admin-btn orange" onclick="window.AP.userResetStocks('${targetUid}')">📊 Hisse Sıfırla</button>
-              </div>
-            </div>
-
-            <div class="aud-action-group">
-              <h5>🔒 Hesap İşlemleri</h5>
-              <div class="aud-input-row">
-                <input type="text" id="au_ban_reason" placeholder="Ban sebebi" class="admin-input-sm">
-                <button class="admin-btn red" onclick="window.AP.userBan('${targetUid}')">🚫 Banla</button>
-                <button class="admin-btn green" onclick="window.AP.userUnban('${targetUid}')">✅ Banı Kaldır</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn blue" onclick="window.AP.userFreeze('${targetUid}')">❄️ Dondur</button>
-                <button class="admin-btn yellow" onclick="window.AP.userUnfreeze('${targetUid}')">🔥 Çöz</button>
-                <button class="admin-btn red" onclick="window.AP.userResetAccount('${targetUid}')">♻️ Hesap Sıfırla</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn purple" onclick="window.AP.userGrantVIP('${targetUid}')">⭐ VIP Ver</button>
-                <button class="admin-btn orange" onclick="window.AP.userRevokeVIP('${targetUid}')">VIP Kaldır</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn gold" onclick="window.AP.userGrantAdmin('${targetUid}')">👑 Admin Ver</button>
-                <button class="admin-btn red" onclick="window.AP.userRevokeAdmin('${targetUid}')">Admin Kaldır</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn teal" onclick="window.AP.userResetDailyBonus('${targetUid}')">🎁 Günlük Bonus Sıfırla</button>
-                <button class="admin-btn blue" onclick="window.AP.userResetWheel('${targetUid}')">🎡 Çark Sıfırla</button>
-              </div>
-            </div>
-
-            <div class="aud-action-group">
-              <h5>🎨 Özel & Unvan</h5>
-              <div class="aud-input-row">
-                <input type="text" id="au_title" placeholder="Unvan metni" class="admin-input-sm">
-                <input type="color" id="au_title_color" value="#fbbf24">
-                <button class="admin-btn gold" onclick="window.AP.userGrantTitle('${targetUid}')">🎖️ Unvan Ver</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn orange" onclick="window.AP.userRemoveTitle('${targetUid}')">Unvanı Kaldır</button>
-                <button class="admin-btn purple" onclick="window.AP.userCompleteAllAch('${targetUid}')">🏅 Tüm Başarımlar</button>
-              </div>
-              <div class="aud-input-row">
-                <button class="admin-btn teal" onclick="window.AP.userCompleteAllTech('${targetUid}')">🔬 Tüm Ar-Ge</button>
-                <button class="admin-btn blue" onclick="window.AP.userCompleteAllCourses('${targetUid}')">🎓 Tüm Kurslar</button>
-              </div>
-            </div>
-
-            <div class="aud-action-group">
-              <h5>📨 Mesaj</h5>
-              <div class="aud-input-row">
-                <textarea id="au_msg" placeholder="Kullanıcıya özel mesaj" rows="2" class="admin-textarea"></textarea>
-              </div>
-              <button class="admin-btn blue" onclick="window.AP.userSendMsg('${targetUid}')">📩 Mesaj Gönder</button>
-              <button class="admin-btn teal" onclick="window.AP.userSendReward('${targetUid}')">🎁 Sürpriz Ödül</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- İŞLEM GEÇMİŞİ -->
-        <div class="aud-txlog">
-          <h4>📜 Son 20 İşlem</h4>
-          ${txList.length ? `<div class="admin-table-wrap">
-            <table class="admin-table">
-              <thead><tr><th>Tarih</th><th>Tür</th><th>Tutar</th><th>Sebep</th></tr></thead>
-              <tbody>
-                ${txList.map(tx => `<tr>
-                  <td>${new Date(tx.ts||0).toLocaleString('tr-TR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-                  <td><span class="badge-${tx.type==='in'?'green':'red'}">${tx.type==='in'?'GELİR':'GİDER'}</span></td>
-                  <td><b style="color:${tx.type==='in'?'#16a34a':'#dc2626'}">${tx.type==='in'?'+':'−'}${_fmt(Math.abs(tx.amount||0))}</b></td>
-                  <td>${tx.reason||'—'}</td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>` : '<p class="admin-muted">İşlem geçmişi yok</p>'}
-        </div>
-      </div>
-    `;
-
-    const modalBody = document.querySelector('.modal-body') || document.querySelector('.modal-content');
-    if (modalBody) modalBody.innerHTML = html;
-    else _modal('👤 Kullanıcı Detayı', html, true);
-  }
-
-  /* Kullanıcı İşlem Fonksiyonları */
-  async function userGrantMoney(tuid) {
-    const amt = safeNum(document.getElementById('au_money')?.value);
-    if (!amt || amt <= 0) return _toast('Geçerli tutar gir', 'error');
-    await _tx('users/' + tuid + '/money', c => (c||0) + amt);
-    await _adminLog('grant_money', { tuid, amt });
-    _toast(`+${_fmt(amt)} verildi`);
-  }
-
-  async function userRemoveMoney(tuid) {
-    const amt = safeNum(document.getElementById('au_money')?.value);
-    if (!amt || amt <= 0) return _toast('Geçerli tutar gir', 'error');
-    await _tx('users/' + tuid + '/money', c => Math.max(0, (c||0) - amt));
-    await _adminLog('remove_money', { tuid, amt });
-    _toast(`−${_fmt(amt)} alındı`);
-  }
-
-  async function userGrantDiamond(tuid) {
-    const amt = Math.floor(safeNum(document.getElementById('au_diamond')?.value));
-    if (!amt || amt <= 0) return _toast('Geçerli miktar gir', 'error');
-    await _tx('users/' + tuid + '/diamonds', c => (c||0) + amt);
-    await _adminLog('grant_diamond', { tuid, amt });
-    _toast(`+${amt} 💎 verildi`);
-  }
-
-  async function userRemoveDiamond(tuid) {
-    const amt = Math.floor(safeNum(document.getElementById('au_diamond')?.value));
-    if (!amt || amt <= 0) return _toast('Geçerli miktar gir', 'error');
-    await _tx('users/' + tuid + '/diamonds', c => Math.max(0, (c||0) - amt));
-    await _adminLog('remove_diamond', { tuid, amt });
-    _toast(`−${amt} 💎 alındı`);
-  }
-
-  async function userGrantXP(tuid) {
-    const amt = safeNum(document.getElementById('au_xp')?.value);
-    if (!amt || amt <= 0) return _toast('Geçerli XP gir', 'error');
-    await _tx('users/' + tuid + '/xp', c => (c||0) + amt);
-    await _adminLog('grant_xp', { tuid, amt });
-    _toast(`+${amt} XP verildi`);
-  }
-
-  async function userSetLevel(tuid) {
-    const lv = Math.floor(safeNum(document.getElementById('au_level')?.value));
-    if (!lv || lv < 1 || lv > 100) return _toast('1-100 arası seviye gir', 'error');
-    await _upd('users/' + tuid, { level: lv, xp: 0 });
-    await _adminLog('set_level', { tuid, lv });
-    _toast(`Seviye ${lv} ayarlandı`);
-  }
-
-  async function userBan(tuid) {
-    const reason = document.getElementById('au_ban_reason')?.value || 'Admin kararı';
-    await _upd('users/' + tuid, { banned: true, banReason: reason, bannedAt: TS() });
-    await _adminLog('ban', { tuid, reason });
-    _toast(`🚫 ${tuid.slice(0,8)} banlandı`);
-  }
-
-  async function userUnban(tuid) {
-    await _upd('users/' + tuid, { banned: false, banReason: null });
-    await _adminLog('unban', { tuid });
-    _toast(`✅ Ban kaldırıldı`);
-  }
-
-  async function userFreeze(tuid) {
-    await _upd('users/' + tuid, { frozen: true, frozenAt: TS() });
-    await _adminLog('freeze', { tuid });
-    _toast(`❄️ Hesap donduruldu`);
-  }
-
-  async function userUnfreeze(tuid) {
-    await _upd('users/' + tuid, { frozen: false });
-    await _adminLog('unfreeze', { tuid });
-    _toast(`🔥 Hesap çözüldü`);
-  }
-
-  async function userResetAccount(tuid) {
-    if (!confirm('Hesabı TAMAMEN sıfırla? (Para, işletme, kriptolar silinir)')) return;
-    const startMoney = (await _get('system/settings/startMoney')) || 10000;
-    await _upd('users/' + tuid, { money: startMoney, level: 1, xp: 0, prestige: 0, diamonds: 10 });
-    await _rm('bank/' + tuid);
-    await _rm('businesses/' + tuid);
-    await _rm('crypto/holdings/' + tuid);
-    await _rm('stocks/holdings/' + tuid);
-    await _adminLog('reset_account', { tuid });
-    _toast(`♻️ Hesap sıfırlandı`);
-  }
-
-  async function userGrantVIP(tuid) {
-    await _upd('users/' + tuid, { isVip: true, vipSince: TS() });
-    await _adminLog('grant_vip', { tuid });
-    _toast('⭐ VIP verildi');
-  }
-
-  async function userRevokeVIP(tuid) {
-    await _upd('users/' + tuid, { isVip: false });
-    _toast('VIP kaldırıldı');
-  }
-
-  async function userGrantAdmin(tuid) {
-    if (!confirm('Bu kullanıcıya ADMİN yetkisi ver?')) return;
-    await _upd('users/' + tuid, { isFounder: true, founderRole: 'admin' });
-    await _adminLog('grant_admin', { tuid });
-    _toast('👑 Admin yetkisi verildi');
-  }
-
-  async function userRevokeAdmin(tuid) {
-    if (!confirm('Admin yetkisini kaldır?')) return;
-    await _upd('users/' + tuid, { isFounder: false, founderRole: null });
-    await _adminLog('revoke_admin', { tuid });
-    _toast('Admin yetkisi kaldırıldı');
-  }
-
-  async function userGrantTitle(tuid) {
-    const t = document.getElementById('au_title')?.value?.trim();
-    const c = document.getElementById('au_title_color')?.value || '#fbbf24';
-    if (!t) return _toast('Unvan metni gir', 'error');
-    await _upd('users/' + tuid, { title: t, titleColor: c });
-    _toast('🎖️ Unvan verildi');
-  }
-
-  async function userRemoveTitle(tuid) {
-    await _upd('users/' + tuid, { title: null, titleColor: null });
-    _toast('Unvan kaldırıldı');
-  }
-
-  async function userResetDebt(tuid) {
-    await _set('bank/' + tuid + '/loan', 0);
-    await _adminLog('reset_debt', { tuid });
-    _toast('💳 Borç sıfırlandı');
-  }
-
-  async function userResetCrypto(tuid) {
-    await _rm('crypto/holdings/' + tuid);
-    _toast('📈 Kripto sıfırlandı');
-  }
-
-  async function userResetStocks(tuid) {
-    await _rm('stocks/holdings/' + tuid);
-    _toast('📊 Hisse portföyü sıfırlandı');
-  }
-
-  async function userSendMsg(tuid) {
-    const msg = document.getElementById('au_msg')?.value?.trim();
-    if (!msg) return _toast('Mesaj boş olamaz', 'error');
-    await _push('notifs/' + tuid, {
-      type: 'admin_msg', icon: '📨',
-      msg: '📨 Admin mesajı: ' + msg,
-      ts: TS(), read: false
-    });
-    _toast('📩 Mesaj gönderildi');
-  }
-
-  async function userSendReward(tuid) {
-    const rewards = [
-      [5000, 10, 100],   [10000, 25, 200],
-      [25000, 50, 500],  [50000, 100, 1000]
-    ];
-    const [money, diamonds, xp] = rewards[Math.floor(Math.random() * rewards.length)];
-    await _tx('users/' + tuid + '/money', c => (c||0) + money);
-    await _tx('users/' + tuid + '/diamonds', c => (c||0) + diamonds);
-    await _tx('users/' + tuid + '/xp', c => (c||0) + xp);
-    await _push('notifs/' + tuid, {
-      type: 'admin_reward', icon: '🎁',
-      msg: `🎁 Admin sürprizi: +${_fmt(money)} +${diamonds}💎 +${xp}XP`,
-      ts: TS(), read: false
-    });
-    _toast(`🎁 Sürpriz ödül gönderildi`);
-  }
-
-  async function userResetDailyBonus(tuid) {
-    await _upd('users/' + tuid, { lastDailyBonus: 0 });
-    _toast('🎁 Günlük bonus sıfırlandı');
-  }
-
-  async function userResetWheel(tuid) {
-    await _upd('users/' + tuid, { wheelLastDate: null });
-    _toast('🎡 Çark hakkı sıfırlandı');
-  }
-
-  async function userCompleteAllAch(tuid) {
-    const achievements = await _get('users/' + tuid + '/achievements') || {};
-    const upd = {};
-    ['first_shop','first_garden','first_farm','first_factory','first_mine','first_crypto',
-     'level_10','level_25','level_50','millionaire','trade_100','mini_10'].forEach(id => {
-      upd[id] = { completed: true, completedAt: TS() };
-    });
-    await _upd('users/' + tuid + '/achievements', upd);
-    _toast('🏅 Tüm başarımlar tamamlandı');
-  }
-
-  async function userCompleteAllTech(tuid) {
-    const TECH_TREE = window.TECH_TREE || {};
-    const upd = {};
-    Object.keys(TECH_TREE).forEach(code => { upd[code] = { code, status: 'completed', completedAt: TS() }; });
-    await _upd('rd_tech/' + tuid, upd);
-    _toast('🔬 Tüm Ar-Ge tamamlandı');
-  }
-
-  async function userCompleteAllCourses(tuid) {
-    const COURSES = window.COURSES || [];
-    const upd = {};
-    COURSES.forEach(c => { upd[c.code] = { code: c.code, name: c.name, status: 'completed', completedAt: TS() }; });
-    await _upd('education/' + tuid, upd);
-    _toast('🎓 Tüm kurslar tamamlandı');
-  }
-
-  /* Tüm Kullanıcılar Listesi */
-  async function openAllUsersModal() {
-    _modal('👥 Tüm Kullanıcılar', '<div class="admin-loading">Yükleniyor...</div>', true);
-    const snap = await _get('users');
-    const users = snap || {};
-    const entries = Object.entries(users).sort((a, b) => (b[1].money||0) - (a[1].money||0));
-
-    const html = `
-      <div class="admin-users-full">
-        <div class="admin-filter-row">
-          <input type="text" id="allUsrQ" oninput="window.AP._liveSearchUsers()" placeholder="Filtrele..." class="admin-input">
-          <button class="admin-btn red" onclick="window.AP.bulkBanSelected()">🚫 Seçilenleri Banla</button>
-          <button class="admin-btn green" onclick="window.AP.bulkGiftAll()">🎁 Hepsine Hediye</button>
-          <button class="admin-btn blue" onclick="window.AP.exportUsersCSV()">📥 CSV İndir</button>
-        </div>
-        <div class="admin-table-wrap" id="allUsersTable">
-          <table class="admin-table">
-            <thead><tr>
-              <th><input type="checkbox" id="chkAll" onchange="window.AP._toggleAllCheck()"></th>
-              <th>Kullanıcı Adı</th>
-              <th>Seviye</th>
-              <th>Para</th>
-              <th>Elmas</th>
-              <th>Durum</th>
-              <th>Kayıt</th>
-              <th>İşlem</th>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:#080d1a;color:#475569;border-bottom:1px solid #1a2f4a">
+              <th style="text-align:left;padding:12px">Kullanıcı</th>
+              <th style="text-align:left;padding:12px">E-posta</th>
+              <th style="text-align:right;padding:12px">Lv</th>
+              <th style="text-align:right;padding:12px">Para</th>
+              <th style="text-align:right;padding:12px">Elmas</th>
+              <th style="text-align:center;padding:12px">Rol</th>
+              <th style="text-align:center;padding:12px">Durum</th>
+              <th style="text-align:center;padding:12px">İşlemler</th>
             </tr></thead>
-            <tbody id="allUsersTbody">
-              ${entries.slice(0, 100).map(([id, u]) => `
-                <tr data-uid="${id}" data-name="${(u.username||'').toLowerCase()}">
-                  <td><input type="checkbox" class="user-chk" data-uid="${id}"></td>
-                  <td><b>${u.username||'İsimsiz'}</b> ${u.isFounder?'👑':''} ${u.isVip?'⭐':''}</td>
-                  <td>Lv ${u.level||1}</td>
-                  <td>${_fmt(u.money||0)}</td>
-                  <td>${u.diamonds||0} 💎</td>
-                  <td>${u.banned?'<span class="badge-red">BAN</span>':u.frozen?'<span class="badge-blue">DONUK</span>':'<span class="badge-green">Aktif</span>'}</td>
-                  <td>${u.createdAt?new Date(u.createdAt).toLocaleDateString('tr-TR'):'?'}</td>
-                  <td>
-                    <button class="admin-btn-xs blue" onclick="window.AP.openUserDetail('${id}')">Detay</button>
-                    <button class="admin-btn-xs red" onclick="window.AP._quickBan('${id}')">Ban</button>
+            <tbody>
+              ${filtered.slice(0, 50).map(([uid, u]) => `
+                <tr style="border-bottom:1px solid #0d1a2e;color:#94a3b8;transition:.15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+                  <td style="padding:12px"><span style="color:#e2e8f0;font-weight:600">${esc(u?.username || '-')}</span><br><span style="font-size:10px;color:#334155">${uid.slice(0, 12)}...</span></td>
+                  <td style="padding:12px">${esc(u?.email || (u?.isAnonymous ? '🛡️ Anonim' : '-'))}</td>
+                  <td style="padding:12px;text-align:right;color:#a78bfa">Lv${u?.level || 1}</td>
+                  <td style="padding:12px;text-align:right;color:#f59e0b">${fmt(u?.money || 0)}</td>
+                  <td style="padding:12px;text-align:right;color:#22c55e">${(u?.diamonds || 0)} 💎</td>
+                  <td style="padding:12px;text-align:center">
+                    <select onchange="window.AP._setUserRole('${uid}',this.value)" style="background:#080d1a;border:1px solid #1a2f4a;color:#94a3b8;border-radius:6px;padding:3px 6px;font-size:11px">
+                      ${['vatandas','esnaf','banker','police','soldier','judge','muhtar','mayor','mp','pm','president'].map(r =>
+                        `<option value="${r}" ${(u?.role || 'vatandas') === r ? 'selected' : ''}>${r}</option>`
+                      ).join('')}
+                    </select>
+                  </td>
+                  <td style="padding:12px;text-align:center">
+                    <span style="color:${u?.banned ? '#ef4444' : (u?.online ? '#22c55e' : '#475569')}">
+                      ${u?.banned ? '🚫' : (u?.online ? '🟢' : '⚫')}
+                    </span>
+                  </td>
+                  <td style="padding:12px;text-align:center">
+                    <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
+                      <button onclick="window.AP._viewUser('${uid}')" style="background:#1e3a5f;color:#60a5fa;border:none;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">👁</button>
+                      <button onclick="window.AP._editMoneyUser('${uid}','${esc(u?.username || uid)}')" style="background:#16a34a22;color:#22c55e;border:1px solid #16a34a33;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">💰</button>
+                      <button onclick="window.AP._editDiamondsUser('${uid}','${esc(u?.username || uid)}')" style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed33;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">💎</button>
+                      ${u?.banned
+                        ? `<button onclick="window.AP._unbanUser('${uid}')" style="background:#16a34a22;color:#22c55e;border:1px solid #16a34a;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">✅</button>`
+                        : `<button onclick="window.AP._banUser('${uid}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer">🚫</button>`
+                      }
+                    </div>
                   </td>
                 </tr>`).join('')}
             </tbody>
           </table>
+          ${filtered.length > 50 ? `<div style="padding:12px;text-align:center;color:#475569;font-size:12px">Toplam ${filtered.length} kullanıcıdan ilk 50 gösteriliyor. Aramayı daraltın.</div>` : ''}
         </div>
-      </div>`;
-    const modalBody = document.querySelector('.modal-body') || document.querySelector('.modal-content');
-    if (modalBody) modalBody.innerHTML = html;
-    else _modal('👥 Tüm Kullanıcılar', html, true);
-  }
-
-  function _liveSearchUsers() {
-    const q = document.getElementById('allUsrQ')?.value?.toLowerCase() || '';
-    document.querySelectorAll('#allUsersTbody tr').forEach(row => {
-      const name = row.dataset.name || '';
-      const uid  = row.dataset.uid  || '';
-      row.style.display = (!q || name.includes(q) || uid.includes(q)) ? '' : 'none';
-    });
-  }
-
-  function _toggleAllCheck() {
-    const all = document.getElementById('chkAll')?.checked;
-    document.querySelectorAll('.user-chk').forEach(c => { c.checked = all; });
-  }
-
-  async function _quickBan(tuid) {
-    if (!confirm(`${tuid.slice(0,8)}... banlanacak. Onaylıyor musun?`)) return;
-    await _upd('users/' + tuid, { banned: true, banReason: 'Admin kararı' });
-    _toast('🚫 Banlandı');
-  }
-
-  async function bulkBanSelected() {
-    const checked = [...document.querySelectorAll('.user-chk:checked')].map(c => c.dataset.uid);
-    if (!checked.length) return _toast('Kullanıcı seç', 'error');
-    if (!confirm(`${checked.length} kullanıcı banlanacak!`)) return;
-    const upd = {};
-    checked.forEach(u => { upd['users/' + u + '/banned'] = true; upd['users/' + u + '/banReason'] = 'Toplu ban'; });
-    await db().ref().update(upd);
-    _toast(`🚫 ${checked.length} kullanıcı banlandı`);
-    await _adminLog('bulk_ban', { count: checked.length });
-  }
-
-  async function bulkGiftAll() {
-    const snap = await _get('users');
-    const users = snap || {};
-    const uids = Object.keys(users);
-    let batch = {};
-    uids.forEach(u => {
-      const key = db().ref().push().key;
-      batch['notifs/' + u + '/' + key] = { type:'admin_gift', icon:'🎁', msg:'🎁 Admin sürprizi: +1.000₺!', ts: TS(), read: false };
-    });
-    await db().ref().update(batch);
-    let batch2 = {};
-    for (const u of uids) {
-      batch2['users/' + u + '/money'] = (users[u].money || 0) + 1000;
-    }
-    await db().ref().update(batch2);
-    _toast(`🎁 ${uids.length} oyuncuya hediye gönderildi`);
-    await _adminLog('bulk_gift', { count: uids.length, amount: 1000 });
-  }
-
-  async function exportUsersCSV() {
-    const snap = await _get('users');
-    const users = snap || {};
-    const rows = [['UID','Kullanıcı Adı','Seviye','Para','Elmas','Durum','Kayıt']];
-    Object.entries(users).forEach(([id, u]) => {
-      rows.push([id, u.username||'—', u.level||1, u.money||0, u.diamonds||0,
-        u.banned?'Banlı':u.frozen?'Dondurulmuş':'Aktif',
-        u.createdAt?new Date(u.createdAt).toLocaleDateString('tr-TR'):'?']);
-    });
-    const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'gamezone_users_' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click();
-    _toast('📥 CSV indirildi');
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 3: EKONOMİ YÖNETİMİ (60 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  /* Global Ekonomi Kontrolleri */
-  function openGlobalEconModal() {
-    _modal('💰 Global Ekonomi Kontrolleri', `
-      <div class="admin-econ-tabs">
-        <button class="admin-tab active" onclick="window.AP._econTab(this,'kripto')">📈 Kripto</button>
-        <button class="admin-tab" onclick="window.AP._econTab(this,'borsa')">📊 Borsa</button>
-        <button class="admin-tab" onclick="window.AP._econTab(this,'banka')">🏦 Banka</button>
-        <button class="admin-tab" onclick="window.AP._econTab(this,'pazar')">🛒 Pazar</button>
-        <button class="admin-tab" onclick="window.AP._econTab(this,'genel')">⚙️ Genel</button>
-      </div>
-      <div id="econTabContent"></div>
-    `, true);
-    window.AP._econTab(null, 'kripto');
-  }
-
-  function _econTab(el, tab) {
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    if (el) el.classList.add('active');
-    const div = document.getElementById('econTabContent');
-    if (!div) return;
-
-    if (tab === 'kripto') {
-      div.innerHTML = `
-        <div class="admin-econ-section">
-          <h4>📈 Kripto Fiyat Yönetimi</h4>
-          <div id="cryptoPriceList" class="admin-loading">Yükleniyor...</div>
-          <div class="admin-action-row">
-            <label>Tüm Coinlere % Değişim:</label>
-            <input type="number" id="cryptoGlobalPct" placeholder="Örn: 10 veya -5" class="admin-input-sm">
-            <button class="admin-btn green" onclick="window.AP.cryptoGlobalChange(1)">📈 Artır</button>
-            <button class="admin-btn red" onclick="window.AP.cryptoGlobalChange(-1)">📉 Düşür</button>
-          </div>
-          <div class="admin-action-row">
-            <button class="admin-btn red" onclick="window.AP.cryptoFreezeTrade(true)">🔒 Ticareti Durdur</button>
-            <button class="admin-btn green" onclick="window.AP.cryptoFreezeTrade(false)">🔓 Ticareti Aç</button>
-          </div>
-        </div>`;
-      window.AP._loadCryptoPrices();
-    }
-    else if (tab === 'borsa') {
-      div.innerHTML = `
-        <div class="admin-econ-section">
-          <h4>📊 Borsa Yönetimi</h4>
-          <div id="stockPriceList" class="admin-loading">Yükleniyor...</div>
-          <div class="admin-action-row">
-            <label>Tüm Hisselere % Değişim:</label>
-            <input type="number" id="stockGlobalPct" placeholder="Örn: 5 veya -3" class="admin-input-sm">
-            <button class="admin-btn green" onclick="window.AP.stockGlobalChange(1)">📈 Artır</button>
-            <button class="admin-btn red" onclick="window.AP.stockGlobalChange(-1)">📉 Düşür</button>
-          </div>
-          <div class="admin-action-row">
-            <button class="admin-btn yellow" onclick="window.AP.triggerDividend()">💰 Temettü Dağıt (Manuel)</button>
-            <button class="admin-btn teal" onclick="window.AP.openIPOManager()">🚀 IPO Yöneticisi</button>
-          </div>
-        </div>`;
-      window.AP._loadStockPrices();
-    }
-    else if (tab === 'banka') {
-      div.innerHTML = `
-        <div class="admin-econ-section">
-          <h4>🏦 Banka Yönetimi</h4>
-          <div class="admin-action-row">
-            <label>Faiz Oranı (%):</label>
-            <input type="number" id="bankInterest" placeholder="0.3" step="0.1" class="admin-input-sm">
-            <button class="admin-btn blue" onclick="window.AP.setBankInterest()">Ayarla</button>
-          </div>
-          <div class="admin-action-row">
-            <label>Kredi Çarpanı (Lv × ?):</label>
-            <input type="number" id="bankLoanMult" placeholder="5000" class="admin-input-sm">
-            <button class="admin-btn blue" onclick="window.AP.setBankLoanMult()">Ayarla</button>
-          </div>
-          <div class="admin-action-row">
-            <button class="admin-btn yellow" onclick="window.AP.triggerInterestPayout()">💵 Faiz Öde (Manuel)</button>
-            <button class="admin-btn red" onclick="window.AP.collectOverdueLoans()">💳 Vadesi Geçmiş Kredileri Tahsil</button>
-          </div>
-        </div>`;
-    }
-    else if (tab === 'pazar') {
-      div.innerHTML = `
-        <div class="admin-econ-section">
-          <h4>🛒 Pazar Yönetimi</h4>
-          <div id="marketListings" class="admin-loading">Yükleniyor...</div>
-          <div class="admin-action-row">
-            <label>Max İlan Fiyatı (₺):</label>
-            <input type="number" id="marketMaxPrice" placeholder="1000000" class="admin-input-sm">
-            <button class="admin-btn blue" onclick="window.AP.setMarketMaxPrice()">Ayarla</button>
-          </div>
-          <div class="admin-action-row">
-            <label>Komisyon Oranı (%):</label>
-            <input type="number" id="marketCommission" placeholder="2" step="0.5" class="admin-input-sm">
-            <button class="admin-btn blue" onclick="window.AP.setMarketCommission()">Ayarla</button>
-          </div>
-          <button class="admin-btn red" onclick="window.AP.clearAllListings()">🗑️ Tüm İlanları Temizle</button>
-        </div>`;
-      window.AP._loadMarketListings();
-    }
-    else if (tab === 'genel') {
-      // Mevcut değerleri çek
-      Promise.all([
-        _get('system/vergiOrani'),
-        _get('system/krediDakikaFaiz'),
-        _get('system/maxSatisBirimDongu'),
-        _get('system/incomeMult'),
-        _get('system/dailyBonus'),
-        _get('system/startMoney'),
-        _get('system/harvestMult'),
-        _get('system/prodSpeedMult'),
-      ]).then(([vergi, kdFaiz, maxSatis, incMult, dBonus, sMoney, hvMult, prSpeed]) => {
-        const d = document.getElementById('econTabContent');
-        if (!d) return;
-        d.innerHTML = `
-          <div class="admin-econ-section">
-            <h4>⚙️ Genel Ekonomi Ayarları</h4>
-            <div class="admin-settings-grid">
-
-              <div class="admin-setting-row" style="background:rgba(239,68,68,.06);border-radius:10px;padding:10px;border:1px solid #ef444433">
-                <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:6px">🏛️ KDV / Satış Vergisi Oranı</div>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gs_vergi" placeholder="0.18" step="0.01" min="0" max="0.99" value="${vergi||0.18}" class="admin-input-sm" style="flex:1">
-                  <span style="font-size:11px;color:var(--text-muted)">= ${((vergi||0.18)*100).toFixed(0)}%</span>
-                  <button class="admin-btn blue" onclick="window.AP.setVergiOrani()">Ayarla</button>
-                </div>
-                <div style="font-size:10px;color:#94a3b8;margin-top:4px">Tüm dükkan satışları, mahalle/ilçe/şehir/bölge pazarı satışlarından kesilir.</div>
-              </div>
-
-              <div class="admin-setting-row" style="background:rgba(245,158,11,.06);border-radius:10px;padding:10px;border:1px solid #f59e0b33">
-                <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:6px">💳 Kredi Dakikalık Faiz Oranı</div>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gs_kdFaiz" placeholder="0.0000694" step="0.000001" min="0" value="${kdFaiz||0.0000694}" class="admin-input-sm" style="flex:1">
-                  <span style="font-size:11px;color:var(--text-muted)">= %${((kdFaiz||0.0000694)*60*24*100).toFixed(2)}/gün</span>
-                </div>
-                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
-                  <button class="admin-btn-xs" onclick="document.getElementById('gs_kdFaiz').value=0.0000694">%0.1/gün</button>
-                  <button class="admin-btn-xs" onclick="document.getElementById('gs_kdFaiz').value=0.000139">%0.2/gün</button>
-                  <button class="admin-btn-xs" onclick="document.getElementById('gs_kdFaiz').value=0.000347">%0.5/gün</button>
-                  <button class="admin-btn-xs" onclick="document.getElementById('gs_kdFaiz').value=0.000694">%1/gün</button>
-                </div>
-                <button class="admin-btn blue" style="margin-top:6px;width:100%" onclick="window.AP.setKrediDakikaFaiz()">Kaydet</button>
-                <div style="font-size:10px;color:#94a3b8;margin-top:4px">Her dakika aktif krediye otomatik uygulanır. Gün sonu toplam = oran × 1440 × borç.</div>
-              </div>
-
-              <div class="admin-setting-row" style="background:rgba(34,197,94,.06);border-radius:10px;padding:10px;border:1px solid #22c55e33">
-                <div style="font-size:12px;font-weight:700;color:#22c55e;margin-bottom:6px">🏪 Dükkan Satış Hızı (Döngü başı max birim)</div>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input type="number" id="gs_maxSatis" placeholder="15" min="1" max="500" value="${maxSatis||15}" class="admin-input-sm" style="flex:1">
-                  <span style="font-size:11px;color:var(--text-muted)">birim/döngü</span>
-                  <button class="admin-btn blue" onclick="window.AP.setMaxSatisBirim()">Ayarla</button>
-                </div>
-                <div style="font-size:10px;color:#94a3b8;margin-top:4px">Her satış döngüsü 45-120 dk. Düşük değer = yavaş satış. Çok yüksek = stok saniyede biter.</div>
-              </div>
-
-              <div class="admin-setting-row">
-                <label>Global Gelir Çarpanı (×)</label>
-                <input type="number" id="gs_income_mult" placeholder="1.0" step="0.1" value="${incMult||1}" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('incomeMult','gs_income_mult')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Günlük Bonus Miktarı (₺)</label>
-                <input type="number" id="gs_daily_bonus" placeholder="1000" value="${dBonus||1000}" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('dailyBonus','gs_daily_bonus')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Yeni Oyuncu Başlangıç Parası (₺)</label>
-                <input type="number" id="gs_start_money" placeholder="10000" value="${sMoney||10000}" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('startMoney','gs_start_money')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Transfer Günlük Limiti (₺)</label>
-                <input type="number" id="gs_transfer_limit" placeholder="100000" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('transferDailyMax','gs_transfer_limit')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Mini Oyun Günlük Kazanç Limiti (₺)</label>
-                <input type="number" id="gs_minigame_limit" placeholder="10000" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('minigameDailyMax','gs_minigame_limit')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Enflasyon Uygula (tüm ürün +%)</label>
-                <input type="number" id="gs_inflation" placeholder="5" class="admin-input-sm">
-                <button class="admin-btn orange" onclick="window.AP.applyInflation()">Uygula</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Hasat Çarpanı (×)</label>
-                <input type="number" id="gs_harvest_mult" placeholder="1.0" step="0.1" value="${hvMult||1}" class="admin-input-sm">
-                <button class="admin-btn green" onclick="window.AP.setGlobalSetting('harvestMult','gs_harvest_mult')">Ayarla</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Üretim Hızı Çarpanı (×)</label>
-                <input type="number" id="gs_prod_speed" placeholder="1.0" step="0.1" value="${prSpeed||1}" class="admin-input-sm">
-                <button class="admin-btn teal" onclick="window.AP.setGlobalSetting('prodSpeedMult','gs_prod_speed')">Ayarla</button>
-              </div>
-
-              <!-- Vergi Hazinesi Özeti -->
-              <div id="vergiHazineDiv" style="background:rgba(239,68,68,.04);border:1px solid #ef444422;border-radius:10px;padding:10px">
-                <div style="font-size:11px;color:#ef4444;font-weight:700">🏛️ Vergi Hazinesi</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Yükleniyor...</div>
-              </div>
-            </div>
-          </div>`;
-
-        // Vergi hazinesini çek
-        _get('system/vergiHazinesi').then(hz => {
-          const el = document.getElementById('vergiHazineDiv');
-          if (el) el.innerHTML = `
-            <div style="font-size:11px;color:#ef4444;font-weight:700">🏛️ Vergi Hazinesi</div>
-            <div style="font-size:18px;font-weight:800;color:var(--text);margin-top:4px">${new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY',minimumFractionDigits:0}).format(hz||0)}</div>
-            <button class="admin-btn-xs red" style="margin-top:6px" onclick="window.AP.clearVergiHazinesi()">Hazineyi Sıfırla</button>`;
-        });
-      });
-
-      div.innerHTML = `<div class="admin-loading">⚙️ Mevcut ayarlar yükleniyor...</div>`;
+      `);
+    } catch (e) {
+      body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`;
     }
   }
 
-  async function _loadCryptoPrices() {
-    const prices = await _get('crypto/prices') || {};
-    const KRIPTO  = window.KRIPTO || [];
-    const div = document.getElementById('cryptoPriceList');
-    if (!div) return;
-    div.innerHTML = `<div class="admin-table-wrap"><table class="admin-table">
-      <thead><tr><th>Coin</th><th>Anlık Fiyat</th><th>Yeni Fiyat</th><th>İşlem</th></tr></thead>
-      <tbody>
-        ${KRIPTO.map(k => {
-          const cur = prices[k.sym]?.current || k.base;
-          return `<tr>
-            <td><b>${k.emo} ${k.sym}</b> ${k.name}</td>
-            <td>₺${cur.toFixed(2)}</td>
-            <td><input type="number" id="cp_${k.sym}" value="${cur.toFixed(2)}" class="admin-input-xs"></td>
-            <td>
-              <button class="admin-btn-xs blue" onclick="window.AP.setCryptoPrice('${k.sym}')">Ayarla</button>
-              <button class="admin-btn-xs red" onclick="window.AP.lockCryptoPrice('${k.sym}',true)">Kilitle</button>
-              <button class="admin-btn-xs green" onclick="window.AP.lockCryptoPrice('${k.sym}',false)">Serbest</button>
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
-  }
-
-  async function setCryptoPrice(sym) {
-    const val = safeNum(document.getElementById('cp_' + sym)?.value);
-    if (!val || val <= 0) return _toast('Geçerli fiyat gir', 'error');
-    await _upd('crypto/prices/' + sym, { current: val, manualSet: true, setBy: 'admin', setAt: TS() });
-    _toast(`${sym} → ₺${val.toFixed(2)}`);
-    await _adminLog('set_crypto_price', { sym, val });
-  }
-
-  async function lockCryptoPrice(sym, locked) {
-    await _upd('crypto/prices/' + sym, { locked });
-    _toast(locked ? `🔒 ${sym} kilitlendi` : `🔓 ${sym} serbest bırakıldı`);
-  }
-
-  async function cryptoGlobalChange(dir) {
-    const pct = safeNum(document.getElementById('cryptoGlobalPct')?.value) / 100 * dir;
-    if (!pct) return _toast('% değer gir', 'error');
-    const KRIPTO = window.KRIPTO || [];
-    const prices = await _get('crypto/prices') || {};
-    const upd = {};
-    for (const k of KRIPTO) {
-      const cur = prices[k.sym]?.current || k.base;
-      const newPrice = Math.max(0.000001, cur * (1 + pct));
-      upd['crypto/prices/' + k.sym + '/current'] = newPrice;
-      upd['crypto/prices/' + k.sym + '/prev'] = cur;
-      upd['crypto/prices/' + k.sym + '/changePct'] = pct * 100;
-    }
-    await db().ref().update(upd);
-    _toast(`📈 Tüm coinler ${pct > 0 ? '+' : ''}${(pct*100).toFixed(1)}% değişti`);
-    await _adminLog('crypto_global_change', { pct });
-  }
-
-  async function cryptoFreezeTrade(freeze) {
-    await _set('system/cryptoTradeFrozen', freeze);
-    _toast(freeze ? '🔒 Kripto ticareti durduruldu' : '🔓 Kripto ticareti açıldı');
-  }
-
-  async function _loadStockPrices() {
-    const STOCKS = window.STOCKS_DATA || [];
-    const div = document.getElementById('stockPriceList');
-    if (!div) return;
-    const pricePromises = STOCKS.slice(0, 10).map(s => _get('stocks/prices/' + s.sym + '/current'));
-    const prices = await Promise.all(pricePromises);
-    div.innerHTML = `<div class="admin-table-wrap"><table class="admin-table">
-      <thead><tr><th>Sembol</th><th>Şirket</th><th>Fiyat</th><th>Yeni Fiyat</th><th>İşlem</th></tr></thead>
-      <tbody>
-        ${STOCKS.slice(0, 10).map((s, i) => {
-          const cur = prices[i] || s.basePrice;
-          return `<tr>
-            <td><b>${s.sym}</b></td>
-            <td>${s.name}</td>
-            <td>₺${cur.toFixed(2)}</td>
-            <td><input type="number" id="sp_${s.sym}" value="${cur.toFixed(2)}" class="admin-input-xs"></td>
-            <td>
-              <button class="admin-btn-xs blue" onclick="window.AP.setStockPrice('${s.sym}')">Ayarla</button>
-              <button class="admin-btn-xs red" onclick="window.AP.lockStock('${s.sym}',true)">Kilitle</button>
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
-  }
-
-  async function setStockPrice(sym) {
-    const val = safeNum(document.getElementById('sp_' + sym)?.value);
-    if (!val || val <= 0) return _toast('Geçerli fiyat gir', 'error');
-    await _upd('stocks/prices/' + sym, { current: val, manualSet: true, setAt: TS() });
-    _toast(`${sym} → ₺${val.toFixed(2)}`);
-  }
-
-  async function lockStock(sym, locked) {
-    await _upd('stocks/prices/' + sym, { locked });
-    _toast(locked ? `🔒 ${sym} kilitlendi` : `🔓 ${sym} serbest`);
-  }
-
-  async function stockGlobalChange(dir) {
-    const pct = safeNum(document.getElementById('stockGlobalPct')?.value) / 100 * dir;
-    if (!pct) return _toast('% değer gir', 'error');
-    const STOCKS = window.STOCKS_DATA || [];
-    const upd = {};
-    for (const s of STOCKS) {
-      const cur = (await _get('stocks/prices/' + s.sym + '/current')) || s.basePrice;
-      upd['stocks/prices/' + s.sym + '/current'] = Math.max(0.01, cur * (1 + pct));
-    }
-    await db().ref().update(upd);
-    _toast(`📊 Tüm hisseler ${(pct*100).toFixed(1)}% değişti`);
-  }
-
-  async function triggerDividend() {
-    if (typeof window.distributeDividends === 'function') {
-      await window.distributeDividends();
-      _toast('💰 Temettü dağıtıldı');
-    } else _toast('distributeDividends fonksiyonu bulunamadı', 'error');
-  }
-
-  async function setBankInterest() {
-    const rate = safeNum(document.getElementById('bankInterest')?.value);
-    if (!rate || rate < 0) return _toast('Geçerli oran gir', 'error');
-    await _set('system/settings/bankInterestRate', rate / 100);
-    _toast(`🏦 Faiz oranı %${rate} ayarlandı`);
-  }
-
-  async function setBankLoanMult() {
-    const mult = safeNum(document.getElementById('bankLoanMult')?.value);
-    if (!mult || mult < 0) return _toast('Geçerli çarpan gir', 'error');
-    await _set('system/settings/bankLoanMult', mult);
-    _toast(`🏦 Kredi çarpanı ${mult} ayarlandı`);
-  }
-
-  /* ── YENİ: Vergi Oranı Ayarla ── */
-  async function setVergiOrani() {
-    const oran = safeNum(document.getElementById('gs_vergi')?.value);
-    if (isNaN(oran) || oran < 0 || oran > 0.99) return _toast('0-0.99 arası gir (örn: 0.18 = %18)', 'error');
-    await _set('system/vergiOrani', oran);
-    await _adminLog('set_vergi_orani', { oran });
-    _toast(`🏛️ KDV oranı %${(oran*100).toFixed(0)} olarak ayarlandı. Tüm satışlara uygulanacak.`);
-  }
-
-  /* ── YENİ: Kredi Dakika Faizi Ayarla ── */
-  async function setKrediDakikaFaiz() {
-    const faiz = safeNum(document.getElementById('gs_kdFaiz')?.value);
-    if (isNaN(faiz) || faiz < 0) return _toast('Geçersiz değer', 'error');
-    await _set('system/krediDakikaFaiz', faiz);
-    await _adminLog('set_kredi_dakika_faiz', { faiz });
-    const gunlukPct = (faiz * 60 * 24 * 100).toFixed(2);
-    _toast(`💳 Kredi dakika faizi ayarlandı: %${faiz} / dk → %${gunlukPct} / gün`);
-  }
-
-  /* ── YENİ: Satış Hızı (max birim/döngü) Ayarla ── */
-  async function setMaxSatisBirim() {
-    const val = safeNum(document.getElementById('gs_maxSatis')?.value);
-    if (!val || val < 1) return _toast('En az 1 gir', 'error');
-    await _set('system/maxSatisBirimDongu', Math.floor(val));
-    await _adminLog('set_max_satis_birim', { val });
-    _toast(`🏪 Döngü başı max satış: ${Math.floor(val)} birim. (Döngü = 45-120 dk arası rastgele)`);
-  }
-
-  /* ── YENİ: Vergi Hazinesini Sıfırla ── */
-  async function clearVergiHazinesi() {
-    if (!confirm('Vergi hazinesini sıfırlamak istediğine emin misin?')) return;
-    const hz = (await _get('system/vergiHazinesi')) || 0;
-    await _set('system/vergiHazinesi', 0);
-    await _set('system/vergiHazinesiArşiv/' + Date.now(), { tutar: hz, sifirlayan: uid(), ts: TS() });
-    await _adminLog('clear_vergi_hazinesi', { hz });
-    _toast(`🏛️ Vergi hazinesi sıfırlandı. (${_fmt(hz)} arşivlendi)`);
-    const el = document.getElementById('vergiHazineDiv');
-    if (el) el.querySelector('div:last-child').textContent = '₺0';
-  }
-
-  async function collectOverdueLoans() {
-    const bankData = await _get('bank') || {};
-    let count = 0;
-    for (const [uid, b] of Object.entries(bankData)) {
-      if ((b.loan || 0) > 0 && b.nextSalary && Date.now() > b.nextSalary) {
-        const money = (await _get('users/' + uid + '/money')) || 0;
-        const pay = Math.min(money, b.loan);
-        if (pay > 0) {
-          await _tx('users/' + uid + '/money', c => Math.max(0, (c||0) - pay));
-          await _tx('bank/' + uid + '/loan', c => Math.max(0, (c||0) - pay));
-          count++;
-        }
-      }
-    }
-    _toast(`💳 ${count} kullanıcıdan kredi tahsil edildi`);
-  }
-
-  async function _loadMarketListings() {
-    const listings = await _get('playerMarket') || {};
-    const div = document.getElementById('marketListings');
-    if (!div) return;
-    const active = Object.entries(listings).filter(([k, l]) => l && l.remaining > 0);
-    div.innerHTML = active.length ? `<div class="admin-table-wrap"><table class="admin-table">
-      <thead><tr><th>Satıcı</th><th>Ürün</th><th>Fiyat</th><th>Kalan</th><th>İşlem</th></tr></thead>
-      <tbody>
-        ${active.slice(0, 30).map(([id, l]) => `<tr>
-          <td>${l.sellerUid?.slice(0,8)||'?'}</td>
-          <td>${l.item||'?'}</td>
-          <td>${_fmt(l.price||0)}</td>
-          <td>${l.remaining||0}</td>
-          <td><button class="admin-btn-xs red" onclick="window.AP.deleteListing('${id}')">Sil</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>` : '<p class="admin-muted">Aktif ilan yok</p>';
-  }
-
-  async function deleteListing(id) {
-    await _rm('playerMarket/' + id);
-    _toast('İlan silindi');
-    await _adminLog('delete_listing', { id });
-  }
-
-  async function clearAllListings() {
-    if (!confirm('TÜM pazaryeri ilanları silinecek!')) return;
-    await _rm('playerMarket');
-    _toast('🗑️ Tüm ilanlar temizlendi');
-    await _adminLog('clear_all_listings', {});
-  }
-
-  async function setMarketMaxPrice() {
-    const val = safeNum(document.getElementById('marketMaxPrice')?.value);
-    if (!val || val <= 0) return _toast('Geçerli fiyat gir', 'error');
-    await _set('system/settings/marketMaxPrice', val);
-    _toast(`🛒 Max ilan fiyatı ${_fmt(val)} ayarlandı`);
-  }
-
-  async function setMarketCommission() {
-    const val = safeNum(document.getElementById('marketCommission')?.value);
-    if (!val || val < 0) return _toast('Geçerli oran gir', 'error');
-    await _set('system/settings/marketCommission', val / 100);
-    _toast(`🛒 Komisyon %${val} ayarlandı`);
-  }
-
-  async function setGlobalSetting(key, inputId) {
-    const val = safeNum(document.getElementById(inputId)?.value);
-    if (isNaN(val)) return _toast('Geçerli değer gir', 'error');
-    await _set('system/settings/' + key, val);
-    _toast(`✅ ${key} = ${val} ayarlandı`);
-    await _adminLog('set_global_setting', { key, val });
-  }
-
-  async function applyInflation() {
-    const pct = safeNum(document.getElementById('gs_inflation')?.value) / 100;
-    if (!pct || pct <= 0) return _toast('Geçerli % gir', 'error');
-    const URUNLER = window.URUNLER || {};
-    const upd = {};
-    Object.keys(URUNLER).forEach(key => {
-      const newBase = Math.floor(URUNLER[key].base * (1 + pct));
-      upd['system/productPrices/' + key] = newBase;
-    });
-    await db().ref().update(upd);
-    _toast(`📈 Tüm ürünlere +%${(pct*100).toFixed(1)} enflasyon uygulandı`);
-    await _adminLog('apply_inflation', { pct });
-  }
-
-  async function openIPOManager() {
-    const ipos = await _get('stocks/ipos') || {};
-    const entries = Object.entries(ipos);
-    _modal('🚀 IPO Yöneticisi', `
-      <div class="admin-table-wrap"><table class="admin-table">
-        <thead><tr><th>Sembol</th><th>Şirket</th><th>Fiyat</th><th>Kalan Hisse</th><th>Durum</th><th>İşlem</th></tr></thead>
-        <tbody>
-          ${entries.map(([id, ipo]) => `<tr>
-            <td><b>${ipo.sym||'?'}</b></td>
-            <td>${ipo.companyName||'?'}</td>
-            <td>₺${ipo.sharePrice||0}</td>
-            <td>${ipo.sharesAvailable||0}</td>
-            <td><span class="badge-${ipo.status==='open'?'green':'grey'}">${ipo.status||'?'}</span></td>
-            <td>
-              <button class="admin-btn-xs green" onclick="window.AP.approveIPO('${id}')">Onayla</button>
-              <button class="admin-btn-xs red" onclick="window.AP.rejectIPO('${id}')">Reddet</button>
-            </td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
-    `, true);
-  }
-
-  async function approveIPO(id) {
-    await _upd('stocks/ipos/' + id, { status: 'approved', approvedAt: TS() });
-    _toast('✅ IPO onaylandı');
-    await _adminLog('approve_ipo', { id });
-  }
-
-  async function rejectIPO(id) {
-    await _upd('stocks/ipos/' + id, { status: 'rejected', rejectedAt: TS() });
-    _toast('❌ IPO reddedildi');
-    await _adminLog('reject_ipo', { id });
-  }
-
-  async function triggerInterestPayout() {
-    const bankData = await _get('bank') || {};
-    let paid = 0;
-    const rate = (await _get('system/settings/bankInterestRate')) || 0.003;
-    for (const [uid, b] of Object.entries(bankData)) {
-      if ((b.investment || 0) > 0) {
-        const interest = Math.floor(b.investment * rate);
-        if (interest > 0) {
-          await _tx('bank/' + uid + '/investment', c => (c||0) + interest);
-          paid++;
-        }
-      }
-    }
-    _toast(`💵 ${paid} kullanıcıya faiz ödendi`);
-    await _adminLog('trigger_interest', { rate, paid });
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 4: OYUN YÖNETİMİ (30 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  function openGameManagement() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">🎮 Oyun Yönetimi</h2>
-        <div class="admin-row-2">
-
-          <!-- MİNİ OYUNLAR -->
-          <div class="admin-card">
-            <h3>🎯 Mini Oyun Ayarları</h3>
-            <div class="admin-settings-grid">
-              <div class="admin-setting-row">
-                <label>Günlük Kazanç Limiti (₺)</label>
-                <input type="number" id="mg_daily_max" placeholder="10000" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('minigameDailyMax','mg_daily_max')">Kaydet</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Ödül Çarpanı (×)</label>
-                <input type="number" id="mg_reward_mult" placeholder="1.0" step="0.1" class="admin-input-sm">
-                <button class="admin-btn green" onclick="window.AP.setGlobalSetting('minigameRewardMult','mg_reward_mult')">Kaydet</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Max CPS (Bot Limiti)</label>
-                <input type="number" id="mg_max_cps" placeholder="15" class="admin-input-sm">
-                <button class="admin-btn yellow" onclick="window.AP.setGlobalSetting('minigameMaxCPS','mg_max_cps')">Kaydet</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Bahis Min (₺)</label>
-                <input type="number" id="mg_bet_min" placeholder="100" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('minigameBetMin','mg_bet_min')">Kaydet</button>
-              </div>
-              <div class="admin-setting-row">
-                <label>Bahis Max (₺)</label>
-                <input type="number" id="mg_bet_max" placeholder="50000" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('minigameBetMax','mg_bet_max')">Kaydet</button>
-              </div>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn red" onclick="window.AP.resetAllMiniGameStats()">🗑️ Tüm Mini Oyun Verisini Sıfırla</button>
-              <button class="admin-btn yellow" onclick="window.AP.openBotSuspectList()">🤖 Bot Şüphelileri</button>
-            </div>
-          </div>
-
-          <!-- GÖREV & SEFER -->
-          <div class="admin-card">
-            <h3>📋 Görev & Sefer Sistemi</h3>
-            <div class="admin-action-row">
-              <button class="admin-btn green" onclick="window.AP.resetAllDailyTasks()">🔄 Tüm Günlük Görevleri Sıfırla</button>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn purple" onclick="window.AP.openExpeditionManager()">🗺️ Sefer Yöneticisi</button>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn gold" onclick="window.AP.openWheelCustomizer()">🎡 Çark Ödüllerini Özelleştir</button>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn teal" onclick="window.AP.giveWheelToAll()">🎡 Herkese Çark Hakkı Ver</button>
-            </div>
-          </div>
-
-          <!-- PvP & DÜELLO -->
-          <div class="admin-card">
-            <h3>⚔️ PvP & Düello</h3>
-            <div id="pvpList" class="admin-loading">Yükleniyor...</div>
-            <div class="admin-action-row">
-              <button class="admin-btn red" onclick="window.AP.cancelAllDuels()">❌ Tüm Düelloları İptal</button>
-              <button class="admin-btn blue" onclick="window.AP.loadPvpData()">🔄 Yenile</button>
-            </div>
-          </div>
-
-          <!-- KARTLARİ & KOLEKSİYON -->
-          <div class="admin-card">
-            <h3>🃏 Koleksiyon Sistemi</h3>
-            <div class="admin-settings-grid">
-              <div class="admin-setting-row">
-                <label>Paket Açma Boost (×)</label>
-                <input type="number" id="card_boost" placeholder="1.0" step="0.1" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('cardRareBoost','card_boost')">Ayarla</button>
-              </div>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn yellow" onclick="window.AP.openCardManager()">🃏 Kart Yöneticisi</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    window.AP.loadPvpData();
-  }
-
-  async function loadPvpData() {
-    const duels = await _get('duels/active') || {};
-    const div = document.getElementById('pvpList');
-    if (!div) return;
-    const entries = Object.entries(duels);
-    div.innerHTML = entries.length ? `<div class="admin-table-wrap"><table class="admin-table">
-      <thead><tr><th>Oluşturan</th><th>Rakip</th><th>Bahis</th><th>Durum</th><th>İşlem</th></tr></thead>
-      <tbody>
-        ${entries.map(([id, d]) => `<tr>
-          <td>${d.creatorName||'?'}</td>
-          <td>${d.opponent?.slice(0,8)||'?'}</td>
-          <td>${_fmt(d.betAmount||0)}</td>
-          <td><span class="badge-${d.status==='active'?'green':'yellow'}">${d.status||'?'}</span></td>
-          <td><button class="admin-btn-xs red" onclick="window.AP.cancelDuel('${id}','${d.creator}','${d.opponent}',${d.betAmount||0})">İptal</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>` : '<p class="admin-muted">Aktif düello yok</p>';
-  }
-
-  async function cancelDuel(id, creator, opponent, bet) {
-    await _rm('duels/active/' + id);
-    if (creator) await _tx('users/' + creator + '/money', c => (c||0) + bet);
-    if (opponent) await _tx('users/' + opponent + '/money', c => (c||0) + bet);
-    _toast('❌ Düello iptal edildi, bahisler iade edildi');
-  }
-
-  async function cancelAllDuels() {
-    if (!confirm('Tüm düellolar iptal edilecek!')) return;
-    const duels = await _get('duels/active') || {};
-    for (const [id, d] of Object.entries(duels)) {
-      await cancelDuel(id, d.creator, d.opponent, d.betAmount || 0);
-    }
-    _toast('❌ Tüm düellolar iptal edildi');
-  }
-
-  async function resetAllDailyTasks() {
-    const snap = await _get('users');
-    const users = snap || {};
-    const upd = {};
-    Object.keys(users).forEach(uid => { upd['users/' + uid + '/dailyTasksDate'] = null; });
-    await db().ref().update(upd);
-    _toast('🔄 Tüm günlük görevler sıfırlandı');
-    await _adminLog('reset_daily_tasks', {});
-  }
-
-  async function resetAllMiniGameStats() {
-    if (!confirm('Tüm mini oyun istatistikleri silinecek!')) return;
-    await _rm('mini');
-    _toast('🗑️ Mini oyun verileri temizlendi');
-  }
-
-  async function giveWheelToAll() {
-    const snap = await _get('users');
-    const users = snap || {};
-    const upd = {};
-    Object.keys(users).forEach(u => { upd['users/' + u + '/wheelLastDate'] = null; });
-    await db().ref().update(upd);
-    _toast('🎡 Herkese çark hakkı verildi');
-    await _adminLog('give_wheel_all', {});
-  }
-
-  async function openBotSuspectList() {
-    const snap = await _get('mini');
-    const mini = snap || {};
-    const suspects = [];
-    Object.entries(mini).forEach(([uid, games]) => {
-      Object.entries(games || {}).forEach(([game, data]) => {
-        if (data.bestScore && data.bestScore > 80) {
-          suspects.push({ uid, game, score: data.bestScore });
-        }
-      });
-    });
-    _modal('🤖 Bot Şüphelileri', `
-      <p class="admin-muted">Yüksek skor (>80 click) tespit edilenler:</p>
-      ${suspects.length ? _table(['UID','Oyun','Skor','İşlem'],
-        suspects.map(s => [s.uid.slice(0,10), s.game, s.score,
-          `<button class="admin-btn-xs red" onclick="window.AP._quickBan('${s.uid}')">Ban</button>`])
-      ) : '<p class="admin-muted">Bot şüphelisi yok</p>'}
-    `, true);
-  }
-
-  async function openWheelCustomizer() {
-    const WHEEL = window.WHEEL_PRIZES || [];
-    _modal('🎡 Çark Ödülleri', `
-      <div class="admin-table-wrap"><table class="admin-table">
-        <thead><tr><th>Ödül</th><th>Tür</th><th>Miktar</th><th>Ağırlık</th></tr></thead>
-        <tbody>
-          ${WHEEL.map((p, i) => `<tr>
-            <td>${p.label}</td>
-            <td>${p.type}</td>
-            <td>${p.amount || 0}</td>
-            <td><input type="number" id="wp_${i}" value="${p.weight}" class="admin-input-xs"></td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
-      <button class="admin-btn blue" onclick="window.AP.saveWheelWeights()">💾 Ağırlıkları Kaydet</button>
-    `, true);
-  }
-
-  async function saveWheelWeights() {
-    const WHEEL = window.WHEEL_PRIZES || [];
-    const upd = {};
-    WHEEL.forEach((p, i) => {
-      const w = safeNum(document.getElementById('wp_' + i)?.value, p.weight);
-      upd['system/wheelWeights/' + i] = w;
-    });
-    await db().ref().update(upd);
-    _toast('💾 Çark ağırlıkları kaydedildi');
-  }
-
-  function openCardManager() {
-    const CARDS = window.COLLECTIBLE_CARDS || [];
-    _modal('🃏 Kart Yöneticisi', `
-      <div class="admin-table-wrap"><table class="admin-table">
-        <thead><tr><th>Kart</th><th>Nadirlik</th><th>Olasılık</th></tr></thead>
-        <tbody>
-          ${CARDS.map(c => `<tr>
-            <td>${c.emo} ${c.name}</td>
-            <td><span class="badge-${c.rarity==='legendary'?'gold':c.rarity==='epic'?'purple':c.rarity==='rare'?'blue':'grey'}">${c.rarity}</span></td>
-            <td>${(c.probability * 100).toFixed(2)}%</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
-    `, true);
-  }
-
-  function openExpeditionManager() {
-    const EXPS = window.EXPEDITIONS || [];
-    _modal('🗺️ Sefer Yöneticisi', `
-      <div class="admin-expedition-list">
-        ${EXPS.map(e => `
-          <div class="admin-card">
-            <h4>${e.emo} ${e.name}</h4>
-            <p class="admin-muted">${e.days} gün · ₺${e.reward.money.toLocaleString('tr-TR')} + ${e.reward.diamonds}💎</p>
-            <div class="aud-input-row">
-              <input type="text" id="exp_uid_${e.code}" placeholder="Oyuncu UID" class="admin-input-sm">
-              <button class="admin-btn green" onclick="window.AP.completeExpedition('${e.code}')">✅ Tamamla</button>
-              <button class="admin-btn red" onclick="window.AP.cancelExpedition('${e.code}')">❌ İptal</button>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `, true);
-  }
-
-  async function completeExpedition(code) {
-    const tuid = document.getElementById('exp_uid_' + code)?.value?.trim();
-    if (!tuid) return _toast('UID gir', 'error');
-    const exp = (window.EXPEDITIONS || []).find(e => e.code === code);
-    if (!exp) return;
-    await _upd('expeditions/' + tuid + '/current', { status: 'completed', completedAt: TS() });
-    await _tx('users/' + tuid + '/money', c => (c||0) + exp.reward.money);
-    await _tx('users/' + tuid + '/diamonds', c => (c||0) + exp.reward.diamonds);
-    await _tx('users/' + tuid + '/xp', c => (c||0) + exp.reward.xp);
-    await _push('notifs/' + tuid, { type:'expedition_done', icon:'🗺️',
-      msg:`🗺️ Seferin tamamlandı: ${exp.name}! +${_fmt(exp.reward.money)} +${exp.reward.diamonds}💎`,
-      ts: TS(), read: false
-    });
-    _toast('✅ Sefer tamamlandı, ödüller verildi');
-  }
-
-  async function cancelExpedition(code) {
-    const tuid = document.getElementById('exp_uid_' + code)?.value?.trim();
-    if (!tuid) return _toast('UID gir', 'error');
-    await _set('expeditions/' + tuid + '/current', null);
-    _toast('❌ Sefer iptal edildi');
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 5: İLETİŞİM & DUYURU YÖNETİMİ (40 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  /* Duyuru Modal */
-  function openBroadcastModal() {
-    _modal('📢 Duyuru Yayınla', `
-      <div class="admin-broadcast-form">
-        <div class="input-group">
-          <label>📝 Duyuru Metni</label>
-          <textarea id="bc_text" placeholder="Tüm oyunculara gönderilecek mesaj..." rows="3" class="admin-textarea"></textarea>
-        </div>
-        <div class="admin-filter-row">
-          <label>⏱️ Süre (dakika)</label>
-          <input type="number" id="bc_dur" value="30" class="admin-input-sm">
-        </div>
-        <div class="admin-filter-row">
-          <button class="admin-btn green" onclick="window.AP.sendBroadcast()">📢 Tüm Oyunculara Yayınla</button>
-          <button class="admin-btn red" onclick="window.AP.clearBroadcast()">🚫 Mevcut Duyuruyu Kaldır</button>
-        </div>
-      </div>
-      <hr>
-      <h4>📨 Segment Bazlı Bildirim</h4>
-      <div class="admin-filter-row">
-        <select id="bc_segment" class="admin-select">
-          <option value="all">Tüm Oyuncular</option>
-          <option value="vip">Sadece VIP</option>
-          <option value="lv10plus">Lv 10+</option>
-          <option value="lv25plus">Lv 25+</option>
-          <option value="lv50plus">Lv 50+</option>
-          <option value="inactive">14 gün inaktif</option>
-          <option value="new">Yeni (7 gün içinde)</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <textarea id="bc_seg_text" placeholder="Bildirim metni..." rows="2" class="admin-textarea"></textarea>
-      </div>
-      <button class="admin-btn blue" onclick="window.AP.sendSegmentNotif()">📨 Segment Bildirimi Gönder</button>
-      <hr>
-      <h4>⏰ Zamanlanmış Bildirim</h4>
-      <div class="admin-filter-row">
-        <input type="text" id="bc_sched_text" placeholder="Bildirim metni" class="admin-input">
-        <input type="number" id="bc_sched_min" placeholder="Kaç dk sonra?" class="admin-input-sm">
-        <button class="admin-btn yellow" onclick="window.AP.scheduleNotif()">⏰ Zamanla</button>
-      </div>
-    `, true);
-  }
-
-  async function sendBroadcast() {
-    const text = document.getElementById('bc_text')?.value?.trim();
-    const dur  = safeNum(document.getElementById('bc_dur')?.value, 30);
-    if (!text) return _toast('Duyuru metni boş olamaz', 'error');
-    await _set('broadcast/current', { active: true, text, sentAt: TS(), expiresAt: Date.now() + dur * 60 * 1000 });
-    await _push('broadcast/history', { text, sentAt: TS(), dur });
-    _toast('📢 Duyuru yayınlandı');
-    await _adminLog('broadcast', { text: text.slice(0,100), dur });
-  }
-
-  async function clearBroadcast() {
-    await _upd('broadcast/current', { active: false });
-    _toast('🚫 Duyuru kaldırıldı');
-  }
-
-  async function sendSegmentNotif() {
-    const segment = document.getElementById('bc_segment')?.value;
-    const text    = document.getElementById('bc_seg_text')?.value?.trim();
-    if (!text) return _toast('Bildirim metni boş', 'error');
-
-    const snap  = await _get('users');
-    const users = snap || {};
-    const now   = Date.now();
-    const day   = 24 * 3600 * 1000;
-
-    let targets = Object.keys(users).filter(uid => {
-      const u = users[uid];
-      if (segment === 'vip')       return u.isVip;
-      if (segment === 'lv10plus')  return (u.level||1) >= 10;
-      if (segment === 'lv25plus')  return (u.level||1) >= 25;
-      if (segment === 'lv50plus')  return (u.level||1) >= 50;
-      if (segment === 'inactive')  return !u.lastLogin || (now - u.lastLogin) > 14*day;
-      if (segment === 'new')       return u.createdAt && (now - u.createdAt) < 7*day;
-      return true;
-    });
-
-    let batch = {};
-    targets.forEach(uid => {
-      const key = db().ref().push().key;
-      batch['notifs/' + uid + '/' + key] = { type:'admin_notif', icon:'📢', msg: text, ts: TS(), read: false };
-    });
-    await db().ref().update(batch);
-    _toast(`📨 ${targets.length} kullanıcıya bildirim gönderildi`);
-    await _adminLog('segment_notif', { segment, count: targets.length });
-  }
-
-  function scheduleNotif() {
-    const text = document.getElementById('bc_sched_text')?.value?.trim();
-    const min  = safeNum(document.getElementById('bc_sched_min')?.value, 0);
-    if (!text || !min) return _toast('Metin ve süre gir', 'error');
-    setTimeout(async () => {
-      const snap = await _get('users');
-      const batch = {};
-      Object.keys(snap || {}).forEach(uid => {
-        const key = db().ref().push().key;
-        batch['notifs/' + uid + '/' + key] = { type:'scheduled_notif', icon:'⏰', msg: text, ts: TS(), read: false };
-      });
-      await db().ref().update(batch);
-      _toast(`📨 Zamanlanmış bildirim gönderildi: ${text.slice(0,50)}`);
-    }, min * 60 * 1000);
-    _toast(`⏰ ${min} dakika sonra bildirim gönderilecek`);
-  }
-
-  /* Haberler & Duyurular */
-  function openNewsManager() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">📰 Haber & Duyuru Yönetimi</h2>
-        <div class="admin-row-2">
-          <div class="admin-card">
-            <h3>📝 Yeni Haber Oluştur</h3>
-            <div class="input-group">
-              <label>Başlık</label>
-              <input type="text" id="news_title" placeholder="Haber başlığı" class="admin-input">
-            </div>
-            <div class="input-group">
-              <label>İçerik</label>
-              <textarea id="news_body" rows="4" placeholder="Haber içeriği..." class="admin-textarea"></textarea>
-            </div>
-            <div class="admin-filter-row">
-              <select id="news_cat" class="admin-select">
-                <option value="update">🔄 Güncelleme</option>
-                <option value="event">🎉 Etkinlik</option>
-                <option value="maintenance">🔧 Bakım</option>
-                <option value="announcement">📢 Duyuru</option>
-              </select>
-              <input type="text" id="news_icon" placeholder="İkon emoji" class="admin-input-sm" value="📢">
-            </div>
-            <div class="admin-filter-row">
-              <label><input type="checkbox" id="news_pin"> 📌 Sabitle (üstte kalsın)</label>
-            </div>
-            <div class="admin-action-row">
-              <button class="admin-btn green" onclick="window.AP.createNews()">✅ Yayınla</button>
-              <button class="admin-btn yellow" onclick="window.AP.previewNews()">👁️ Önizle</button>
-            </div>
-          </div>
-          <div class="admin-card">
-            <h3>📋 Mevcut Haberler</h3>
-            <div id="newsList" class="admin-loading">Yükleniyor...</div>
-          </div>
-        </div>
-      </div>`;
-    window.AP.loadNews();
-  }
-
-  async function loadNews() {
-    const news = await _get('news') || {};
-    const div = document.getElementById('newsList');
-    if (!div) return;
-    const entries = Object.entries(news).sort((a,b) => (b[1].ts||0) - (a[1].ts||0)).slice(0, 20);
-    div.innerHTML = entries.length ? entries.map(([id, n]) => `
-      <div class="admin-news-item">
-        <div class="ani-head">${n.icon||'📢'} <b>${n.title||'Başlıksız'}</b> ${n.pinned?'📌':''}</div>
-        <div class="ani-meta">${n.category||'?'} · ${n.ts?new Date(n.ts).toLocaleDateString('tr-TR'):'?'}</div>
-        <div class="admin-action-row">
-          <button class="admin-btn-xs blue" onclick="window.AP.pinNews('${id}',${!n.pinned})">📌 ${n.pinned?'Sabitleme Kaldır':'Sabitle'}</button>
-          <button class="admin-btn-xs yellow" onclick="window.AP.hideNews('${id}',${!n.hidden})">👁️ ${n.hidden?'Göster':'Gizle'}</button>
-          <button class="admin-btn-xs red" onclick="window.AP.deleteNews('${id}')">🗑️ Sil</button>
-        </div>
-      </div>`).join('') : '<p class="admin-muted">Haber yok</p>';
-  }
-
-  async function createNews() {
-    const title   = document.getElementById('news_title')?.value?.trim();
-    const body    = document.getElementById('news_body')?.value?.trim();
-    const cat     = document.getElementById('news_cat')?.value || 'announcement';
-    const icon    = document.getElementById('news_icon')?.value?.trim() || '📢';
-    const pinned  = document.getElementById('news_pin')?.checked || false;
-
-    if (!title || !body) return _toast('Başlık ve içerik gerekli', 'error');
-    await _push('news', { title, body, category: cat, icon, pinned, hidden: false, ts: TS(), author: 'Admin' });
-    _toast('✅ Haber yayınlandı');
-    await _adminLog('create_news', { title });
-    loadNews();
-  }
-
-  function previewNews() {
-    const title = document.getElementById('news_title')?.value;
-    const body  = document.getElementById('news_body')?.value;
-    const icon  = document.getElementById('news_icon')?.value || '📢';
-    _modal('👁️ Haber Önizleme', `<div class="news-preview-box"><h3>${icon} ${title}</h3><p>${body}</p></div>`);
-  }
-
-  async function pinNews(id, val) {
-    await _upd('news/' + id, { pinned: val });
-    _toast(val ? '📌 Sabitlendi' : 'Sabitleme kaldırıldı');
-    loadNews();
-  }
-
-  async function hideNews(id, val) {
-    await _upd('news/' + id, { hidden: val });
-    _toast(val ? '👁️ Gizlendi' : 'Gösterildi');
-    loadNews();
-  }
-
-  async function deleteNews(id) {
-    await _rm('news/' + id);
-    _toast('🗑️ Haber silindi');
-    loadNews();
-  }
-
-  /* Bakım Modal */
-  function toggleMaintModal() {
-    _modal('🔧 Bakım Modu Yönetimi', `
-      <div class="admin-maint-form">
-        <div class="input-group">
-          <label>📝 Bakım Sebebi</label>
-          <input type="text" id="maint_reason" placeholder="Sistem güncelleniyor..." class="admin-input">
-        </div>
-        <div class="input-group">
-          <label>⏱️ Tahmini Süre</label>
-          <input type="text" id="maint_eta" placeholder="15 dk, 1 saat..." class="admin-input">
-        </div>
-        <div class="admin-action-row">
-          <button class="admin-btn red" onclick="window.AP.setMaintenance(true)">🔧 BAKIMA AL</button>
-          <button class="admin-btn green" onclick="window.AP.setMaintenance(false)">✅ BAKIMDAN ÇIKAR</button>
-        </div>
-        <div class="admin-planned-maint">
-          <h4>📅 Planlı Bakım</h4>
-          <div class="admin-filter-row">
-            <input type="datetime-local" id="maint_plan_time" class="admin-input">
-            <input type="number" id="maint_warn_min" placeholder="Kaç dk önce uyar?" value="15" class="admin-input-sm">
-          </div>
-          <button class="admin-btn yellow" onclick="window.AP.scheduleMaintenance()">⏰ Zamanla</button>
-        </div>
-      </div>
-    `, true);
-  }
-
-  async function setMaintenance(active) {
-    const reason = document.getElementById('maint_reason')?.value || 'Sistem güncelleniyor';
-    const eta    = document.getElementById('maint_eta')?.value || '15 dk';
-    await _set('system/maintenance', { active, reason, eta, setAt: TS() });
-    const maint = document.getElementById('maintenanceScreen');
-    if (maint) {
-      if (active) { maint.classList.add('active'); maint.style.display = 'flex'; }
-      else        { maint.classList.remove('active'); maint.style.display = 'none'; }
-    }
-    _toast(active ? '🔧 Bakım modu açıldı' : '✅ Bakım modu kapatıldı');
-    await _adminLog('toggle_maintenance', { active, reason });
-  }
-
-  function scheduleMaintenance() {
-    const planTime = document.getElementById('maint_plan_time')?.value;
-    const warnMin  = safeNum(document.getElementById('maint_warn_min')?.value, 15);
-    if (!planTime) return _toast('Zaman seç', 'error');
-    const target = new Date(planTime).getTime();
-    const now    = Date.now();
-    const warnAt = target - warnMin * 60 * 1000;
-    if (warnAt > now) {
-      setTimeout(async () => {
-        const snap  = await _get('users');
-        const batch = {};
-        Object.keys(snap || {}).forEach(uid => {
-          const key = db().ref().push().key;
-          batch['notifs/' + uid + '/' + key] = {
-            type:'maintenance_warn', icon:'🔧',
-            msg: `⚠️ ${warnMin} dakika sonra bakım başlıyor!`,
-            ts: TS(), read: false
-          };
-        });
-        await db().ref().update(batch);
-      }, warnAt - now);
-    }
-    if (target > now) {
-      setTimeout(() => window.AP.setMaintenance(true), target - now);
-    }
-    _toast(`⏰ Bakım ${new Date(target).toLocaleString('tr-TR')}'da başlayacak`);
-  }
-
-  /* Sohbet Yönetimi */
-  function openChatManager() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">💬 Sohbet Yönetimi</h2>
-        <div class="admin-chat-actions">
-          <input type="text" id="chat_mute_uid" placeholder="Mute için UID" class="admin-input">
-          <input type="number" id="chat_mute_min" placeholder="Süre (dk)" value="60" class="admin-input-sm">
-          <button class="admin-btn red" onclick="window.AP.muteUser()">🔇 Mute Et</button>
-          <button class="admin-btn green" onclick="window.AP.unmuteUser()">🔊 Mute Kaldır</button>
-        </div>
-        <div class="admin-filter-row">
-          <textarea id="chat_admin_msg" placeholder="Admin mesajı (altın badge ile gözükür)" rows="2" class="admin-textarea"></textarea>
-          <button class="admin-btn gold" onclick="window.AP.sendAdminChatMsg()">👑 Admin Mesajı Gönder</button>
-        </div>
-        <div class="admin-filter-row">
-          <input type="text" id="filter_word" placeholder="Yasaklı kelime ekle..." class="admin-input">
-          <button class="admin-btn red" onclick="window.AP.addFilterWord()">➕ Ekle</button>
-          <button class="admin-btn green" onclick="window.AP.loadFilterWords()">📋 Listeyi Gör</button>
-        </div>
-        <h3>💬 Canlı Sohbet</h3>
-        <div id="chatMessages" class="admin-chat-live admin-loading">Yükleniyor...</div>
-        <button class="admin-btn blue" onclick="window.AP.loadChatMessages()">🔄 Yenile</button>
-      </div>`;
-    window.AP.loadChatMessages();
-  }
-
-  async function loadChatMessages() {
-    const msgs = await _get('chat/global') || {};
-    const div = document.getElementById('chatMessages');
-    if (!div) return;
-    const sorted = Object.entries(msgs).sort((a,b) => (b[1].ts||0) - (a[1].ts||0)).slice(0, 50);
-    div.innerHTML = sorted.length ? sorted.map(([id, m]) => `
-      <div class="admin-chat-msg">
-        <span class="chat-user">${m.username||'?'}</span>
-        <span class="chat-time">${m.ts?new Date(m.ts).toLocaleTimeString('tr-TR'):''}</span>
-        <span class="chat-text">${m.message||''}</span>
-        <button class="admin-btn-xs red" onclick="window.AP.deleteChatMsg('${id}')">🗑️</button>
-        <button class="admin-btn-xs orange" onclick="window.AP.muteChatUser('${m.uid}')">🔇</button>
-      </div>`).join('') : '<p class="admin-muted">Mesaj yok</p>';
-  }
-
-  async function deleteChatMsg(id) {
-    await _rm('chat/global/' + id);
-    _toast('🗑️ Mesaj silindi');
-    loadChatMessages();
-  }
-
-  async function muteUser() {
-    const tuid = document.getElementById('chat_mute_uid')?.value?.trim();
-    const min  = safeNum(document.getElementById('chat_mute_min')?.value, 60);
-    if (!tuid) return _toast('UID gir', 'error');
-    await _upd('users/' + tuid, { chatMutedUntil: Date.now() + min * 60 * 1000 });
-    _toast(`🔇 ${tuid.slice(0,8)} ${min} dk mute edildi`);
-  }
-
-  async function unmuteUser() {
-    const tuid = document.getElementById('chat_mute_uid')?.value?.trim();
-    if (!tuid) return _toast('UID gir', 'error');
-    await _upd('users/' + tuid, { chatMutedUntil: 0 });
-    _toast('🔊 Mute kaldırıldı');
-  }
-
-  async function muteChatUser(tuid) {
-    await _upd('users/' + tuid, { chatMutedUntil: Date.now() + 3600000 });
-    _toast('🔇 1 saat mute edildi');
-  }
-
-  async function sendAdminChatMsg() {
-    const msg = document.getElementById('chat_admin_msg')?.value?.trim();
-    if (!msg) return _toast('Mesaj boş', 'error');
-    await _push('chat/global', {
-      uid: uid() || 'admin', username: '👑 Admin',
-      message: msg, ts: TS(), isAdmin: true
-    });
-    _toast('👑 Admin mesajı gönderildi');
-  }
-
-  async function addFilterWord() {
-    const word = document.getElementById('filter_word')?.value?.trim()?.toLowerCase();
-    if (!word) return _toast('Kelime gir', 'error');
-    await _push('system/filterWords', word);
-    _toast(`🚫 "${word}" engellendi`);
-  }
-
-  async function loadFilterWords() {
-    const words = await _get('system/filterWords') || {};
-    _modal('🚫 Yasaklı Kelimeler', `
-      <ul class="admin-filter-word-list">
-        ${Object.entries(words).map(([id, w]) => `
-          <li>${w} <button class="admin-btn-xs red" onclick="window.AP.removeFilterWord('${id}')">Kaldır</button></li>
-        `).join('') || '<li class="admin-muted">Liste boş</li>'}
-      </ul>
-    `);
-  }
-
-  async function removeFilterWord(id) {
-    await _rm('system/filterWords/' + id);
-    _toast('✅ Kelime kaldırıldı');
-    loadFilterWords();
-  }
-
-  /* Toplu Bildirim */
-  function openBulkNotifModal() {
-    _modal('📨 Toplu Bildirim', `
-      <div class="input-group">
-        <label>📝 Bildirim Mesajı</label>
-        <textarea id="bulk_notif_text" rows="3" placeholder="Tüm oyunculara gönderilecek bildirim..." class="admin-textarea"></textarea>
-      </div>
-      <div class="admin-filter-row">
-        <input type="text" id="bulk_notif_icon" placeholder="İkon" value="📢" class="admin-input-sm">
-      </div>
-      <button class="admin-btn green" onclick="window.AP.sendBulkNotif()" style="width:100%">📨 TÜMÜNE GÖNDER</button>
-    `);
-  }
-
-  async function sendBulkNotif() {
-    const text = document.getElementById('bulk_notif_text')?.value?.trim();
-    const icon = document.getElementById('bulk_notif_icon')?.value || '📢';
-    if (!text) return _toast('Mesaj boş', 'error');
-    const snap  = await _get('users');
-    const users = snap || {};
-    let batch = {};
-    Object.keys(users).forEach(uid => {
-      const key = db().ref().push().key;
-      batch['notifs/' + uid + '/' + key] = { type:'bulk_notif', icon, msg: text, ts: TS(), read: false };
-    });
-    await db().ref().update(batch);
-    _toast(`📨 ${Object.keys(users).length} oyuncuya bildirim gönderildi`);
-    await _adminLog('bulk_notif', { text: text.slice(0,100) });
-    _closeModal();
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 6: GÜVENLİK & MODERASYon (25 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  function openSecurityLogs() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">🛡️ Güvenlik & Moderasyon</h2>
-        <div class="admin-security-tabs">
-          <button class="admin-tab active" onclick="window.AP._secTab(this,'attempts')">🔐 Admin Girişleri</button>
-          <button class="admin-tab" onclick="window.AP._secTab(this,'reports')">🚨 Raporlar</button>
-          <button class="admin-tab" onclick="window.AP._secTab(this,'suspicious')">⚠️ Şüpheli Aktivite</button>
-          <button class="admin-tab" onclick="window.AP._secTab(this,'adminlog')">📋 Admin Logu</button>
-        </div>
-        <div id="secTabContent"></div>
-      </div>`;
-    window.AP._secTab(null, 'attempts');
-  }
-
-  function _secTab(el, tab) {
-    document.querySelectorAll('.admin-security-tabs .admin-tab').forEach(t => t.classList.remove('active'));
-    if (el) el.classList.add('active');
-    if (tab === 'attempts') window.AP.loadSecAttempts();
-    else if (tab === 'reports') window.AP.loadReports();
-    else if (tab === 'suspicious') window.AP.loadSuspicious();
-    else if (tab === 'adminlog') window.AP.loadAdminLog();
-  }
-
-  async function loadSecAttempts() {
-    const div = document.getElementById('secTabContent');
-    if (!div) return;
-    const attempts = await _get('security/founderAttempts') || {};
-    const sorted = Object.values(attempts).sort((a,b) => (b.ts||0) - (a.ts||0)).slice(0, 50);
-    div.innerHTML = `<h4>🔐 Admin Giriş Denemeleri (Son 50)</h4>
-      ${sorted.length ? _table(
-        ['Tarih','UID','Başarı','Cihaz FP'],
-        sorted.map(a => [
-          new Date(a.ts||0).toLocaleString('tr-TR'),
-          (a.uid||'?').slice(0,12),
-          a.success ? '<span class="badge-green">✅</span>' : '<span class="badge-red">❌</span>',
-          (a.fp||'?').slice(0,12)
-        ])
-      ) : '<p class="admin-muted">Log yok</p>'}`;
-  }
-
-  async function loadReports() {
-    const div = document.getElementById('secTabContent');
-    if (!div) return;
-    const reports = await _get('reports') || {};
-    const entries = Object.entries(reports).sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
-    div.innerHTML = `<h4>🚨 Kullanıcı Raporları</h4>
-      ${entries.length ? `<div class="admin-table-wrap"><table class="admin-table">
-        <thead><tr><th>Rapor Eden</th><th>Hedef</th><th>Sebep</th><th>Tarih</th><th>Durum</th><th>İşlem</th></tr></thead>
-        <tbody>
-          ${entries.map(([id, r]) => `<tr>
-            <td>${(r.reporterUid||'?').slice(0,8)}</td>
-            <td>${(r.targetUid||'?').slice(0,8)}</td>
-            <td>${r.reason||'?'}</td>
-            <td>${r.ts?new Date(r.ts).toLocaleDateString('tr-TR'):'?'}</td>
-            <td><span class="badge-${r.status==='open'?'red':'grey'}">${r.status||'open'}</span></td>
-            <td>
-              <button class="admin-btn-xs red" onclick="window.AP._quickBan('${r.targetUid}')">Ban</button>
-              <button class="admin-btn-xs yellow" onclick="window.AP.warnUser('${r.targetUid}')">⚠️ Uyar</button>
-              <button class="admin-btn-xs grey" onclick="window.AP.closeReport('${id}')">Kapat</button>
-            </td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>` : '<p class="admin-muted">Rapor yok</p>'}`;
-  }
-
-  async function warnUser(tuid) {
-    await _push('notifs/' + tuid, {
-      type: 'admin_warning', icon: '⚠️',
-      msg: '⚠️ Hesabınız için uyarı aldınız. Kural ihlali durumunda ban uygulanacaktır.',
-      ts: TS(), read: false
-    });
-    _toast('⚠️ Kullanıcı uyarıldı');
-  }
-
-  async function closeReport(id) {
-    await _upd('reports/' + id, { status: 'closed', closedAt: TS() });
-    _toast('✅ Rapor kapatıldı');
-    loadReports();
-  }
-
-  async function loadSuspicious() {
-    const div = document.getElementById('secTabContent');
-    if (!div) return;
-    div.innerHTML = '<div class="admin-loading">Analiz yapılıyor...</div>';
-    const users = await _get('users') || {};
-    const suspicious = [];
-    for (const [id, u] of Object.entries(users)) {
-      const reasons = [];
-      if ((u.money || 0) > 1e10) reasons.push('Anormal para (>10B)');
-      if ((u.diamonds || 0) > 100000) reasons.push('Anormal elmas (>100K)');
-      if ((u.level || 1) > 100) reasons.push('Anormal seviye (>100)');
-      if (reasons.length) suspicious.push({ id, name: u.username, reasons });
-    }
-    div.innerHTML = `<h4>⚠️ Şüpheli Aktivite (${suspicious.length})</h4>
-      ${suspicious.length ? suspicious.map(s => `
-        <div class="admin-suspicious-item">
-          <b>${s.name||'?'}</b> (${s.id.slice(0,10)}): ${s.reasons.join(', ')}
-          <button class="admin-btn-xs red" onclick="window.AP.openUserDetail('${s.id}')">İncele</button>
-          <button class="admin-btn-xs orange" onclick="window.AP._quickBan('${s.id}')">Ban</button>
-        </div>`).join('') : '<p class="admin-muted">Şüpheli aktivite tespit edilmedi</p>'}`;
-  }
-
-  async function loadAdminLog() {
-    const div = document.getElementById('secTabContent');
-    if (!div) return;
-    const logs = await _get('adminLogs') || {};
-    const sorted = Object.values(logs).sort((a,b) => (b.ts||0) - (a.ts||0)).slice(0, 100);
-    div.innerHTML = `<h4>📋 Admin İşlem Logu (Son 100)</h4>
-      ${sorted.length ? _table(
-        ['Tarih','Admin UID','İşlem','Detay'],
-        sorted.map(l => [
-          new Date(l.ts||0).toLocaleString('tr-TR'),
-          (l.adminUid||'?').slice(0,10),
-          l.action||'?',
-          (l.details||'').slice(0,60)
-        ])
-      ) : '<p class="admin-muted">Log yok</p>'}`;
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 7: SİSTEM YÖNETİMİ (38 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  function openSystemSettings() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">⚙️ Sistem Yönetimi</h2>
-        <div class="admin-row-2">
-          <!-- GENEL AYARLAR -->
-          <div class="admin-card">
-            <h3>⚙️ Genel Ayarlar</h3>
-            <div class="admin-settings-grid">
-              <div class="admin-setting-row"><label>🎮 Oyun Versiyonu</label>
-                <input type="text" id="sys_version" placeholder="v3.0" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setSystemSetting('gameVersion','sys_version')">Kaydet</button></div>
-              <div class="admin-setting-row"><label>📝 Login Mesajı</label>
-                <input type="text" id="sys_login_msg" placeholder="Giriş ekranı mesajı" class="admin-input">
-                <button class="admin-btn blue" onclick="window.AP.setSystemSetting('loginMessage','sys_login_msg')">Kaydet</button></div>
-              <div class="admin-setting-row"><label>Kayıt</label>
-                <button class="admin-btn green" onclick="window.AP.toggleRegistration(true)">✅ Aç</button>
-                <button class="admin-btn red" onclick="window.AP.toggleRegistration(false)">🔒 Kapat</button></div>
-              <div class="admin-setting-row"><label>Anonim Giriş</label>
-                <button class="admin-btn green" onclick="window.AP.toggleAnon(true)">✅ Aç</button>
-                <button class="admin-btn red" onclick="window.AP.toggleAnon(false)">🔒 Kapat</button></div>
-              <div class="admin-setting-row"><label>Max Para Limiti</label>
-                <input type="number" id="sys_max_money" placeholder="999999999999" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('maxMoney','sys_max_money')">Kaydet</button></div>
-              <div class="admin-setting-row"><label>Max Elmas Limiti</label>
-                <input type="number" id="sys_max_dia" placeholder="999999" class="admin-input-sm">
-                <button class="admin-btn blue" onclick="window.AP.setGlobalSetting('maxDiamonds','sys_max_dia')">Kaydet</button></div>
-              <div class="admin-setting-row" style="background:rgba(245,158,11,.08);border-radius:8px;padding:8px;border:1px solid rgba(245,158,11,.3)"><label>💎 1 Elmas = Kaç ₺ (Nakit)</label>
-                <input type="number" id="sys_elmas_fiyat" placeholder="1500" min="1" class="admin-input-sm">
-                <button class="admin-btn gold" onclick="window.AP.setElmasFiyati()">Ayarla</button></div>
-            </div>
-          </div>
-
-          <!-- ETKİNLİK SİSTEMİ -->
-          <div class="admin-card">
-            <h3>🎉 Etkinlik Sistemi</h3>
-            <div class="admin-settings-grid">
-              <div class="admin-setting-row"><label>Çift XP Süresi (dk)</label>
-                <input type="number" id="evt_2xp_min" placeholder="60" class="admin-input-sm">
-                <button class="admin-btn purple" onclick="window.AP.startEvent('doubleXP','evt_2xp_min')">Başlat</button></div>
-              <div class="admin-setting-row"><label>Çift Para Süresi (dk)</label>
-                <input type="number" id="evt_2money_min" placeholder="60" class="admin-input-sm">
-                <button class="admin-btn gold" onclick="window.AP.startEvent('doubleMoney','evt_2money_min')">Başlat</button></div>
-              <div class="admin-setting-row"><label>İndirim % (Mağaza)</label>
-                <input type="number" id="evt_discount" placeholder="20" class="admin-input-sm">
-                <button class="admin-btn teal" onclick="window.AP.startDiscountEvent()">Başlat</button></div>
-            </div>
-            <button class="admin-btn orange" onclick="window.AP.openEventModal()">🎉 Özel Etkinlik Oluştur</button>
-            <button class="admin-btn red" onclick="window.AP.stopAllEvents()">⛔ Tüm Etkinlikleri Durdur</button>
-          </div>
-
-          <!-- FİREBASE İZLEME -->
-          <div class="admin-card">
-            <h3>🔥 Firebase İzleme</h3>
-            <div id="fbStatus" class="admin-loading">Yükleniyor...</div>
-            <div class="admin-action-row">
-              <button class="admin-btn blue" onclick="window.AP.loadFirebaseStatus()">🔄 Durum Yenile</button>
-              <button class="admin-btn yellow" onclick="window.AP.openRawDataViewer()">📂 Raw Data Görüntüle</button>
-            </div>
-          </div>
-
-          <!-- TEMA YÖNETİMİ -->
-          <div class="admin-card">
-            <h3>🎨 Tema & Görsel</h3>
-            <div class="admin-settings-grid">
-              <div class="admin-setting-row"><label>Ana Renk</label>
-                <input type="color" id="theme_primary" value="#3b82f6">
-                <button class="admin-btn blue" onclick="window.AP.applyThemeColor('primary','theme_primary')">Uygula</button></div>
-              <div class="admin-setting-row"><label>İkincil Renk</label>
-                <input type="color" id="theme_secondary" value="#10b981">
-                <button class="admin-btn teal" onclick="window.AP.applyThemeColor('secondary','theme_secondary')">Uygula</button></div>
-              <div class="admin-setting-row"><label>Sezon Teması</label>
-                <select id="theme_season" class="admin-select">
-                  <option value="">Varsayılan</option>
-                  <option value="winter">❄️ Kış</option>
-                  <option value="summer">☀️ Yaz</option>
-                  <option value="spring">🌸 İlkbahar</option>
-                  <option value="bayram">🌙 Bayram</option>
-                </select>
-                <button class="admin-btn yellow" onclick="window.AP.applySeasonTheme()">Uygula</button></div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    window.AP.loadFirebaseStatus();
-  }
-
-  async function setSystemSetting(key, inputId) {
-    const val = document.getElementById(inputId)?.value?.trim();
-    if (!val) return _toast('Değer gir', 'error');
-    await _set('system/settings/' + key, val);
-    _toast(`✅ ${key} kaydedildi`);
-    await _adminLog('set_system_setting', { key, val });
-  }
-
-  async function setElmasFiyati() {
-    const val = safeNum(document.getElementById('sys_elmas_fiyat')?.value);
-    if (!val || val < 1) return _toast('Geçerli fiyat gir (min: 1₺)', 'error');
-    await _set('system/elmasFiyati', val);
-    _toast(`💎 Elmas fiyatı: 1 💎 = ${_fmt(val)} olarak ayarlandı`);
-    await _adminLog('set_elmas_fiyati', { fiyat: val });
-    // Tüm oyunculara bildir
-    const snap = await _get('users');
-    const batch = {};
-    Object.keys(snap || {}).forEach(uid => {
-      const key = db().ref().push().key;
-      batch['notifs/' + uid + '/' + key] = {
-        type:'elmas_fiyat', icon:'💎',
-        msg: `💎 Elmas fiyatı güncellendi: 1 Elmas = ${_fmt(val)}`,
-        ts: TS(), read: false
-      };
-    });
-    await db().ref().update(batch);
-  }
-
-  async function toggleRegistration(open) {
-    await _set('system/settings/registrationOpen', open);
-    _toast(open ? '✅ Kayıt açıldı' : '🔒 Kayıt kapatıldı');
-  }
-
-  async function toggleAnon(open) {
-    await _set('system/settings/anonLoginOpen', open);
-    _toast(open ? '✅ Anonim giriş açıldı' : '🔒 Anonim giriş kapatıldı');
-  }
-
-  async function startEvent(type, inputId) {
-    const min = safeNum(document.getElementById(inputId)?.value, 60);
-    const endsAt = Date.now() + min * 60 * 1000;
-    await _set('system/events/' + type, { active: true, startedAt: TS(), endsAt, mult: 2 });
-    // Tüm oyunculara bildirim
-    const snap = await _get('users');
-    const batch = {};
-    const icon = type === 'doubleXP' ? '⭐' : '💰';
-    const msg  = type === 'doubleXP' ? `⭐ Çift XP etkinliği başladı! ${min} dk boyunca 2x XP kazan!` : `💰 Çift para etkinliği başladı! ${min} dk boyunca 2x kazanç!`;
-    Object.keys(snap || {}).forEach(uid => {
-      const key = db().ref().push().key;
-      batch['notifs/' + uid + '/' + key] = { type:'event_start', icon, msg, ts: TS(), read: false };
-    });
-    await db().ref().update(batch);
-    _toast(`🎉 ${type} etkinliği ${min} dk başladı!`);
-    await _adminLog('start_event', { type, min });
-  }
-
-  async function startDiscountEvent() {
-    const pct = safeNum(document.getElementById('evt_discount')?.value, 20);
-    await _set('system/events/shopDiscount', { active: true, pct, startedAt: TS() });
-    _toast(`🏷️ %${pct} indirim etkinliği başladı`);
-  }
-
-  async function stopAllEvents() {
-    await _rm('system/events');
-    _toast('⛔ Tüm etkinlikler durduruldu');
-    await _adminLog('stop_all_events', {});
-  }
-
-  function openEventModal() {
-    _modal('🎉 Özel Etkinlik Oluştur', `
-      <div class="input-group"><label>Etkinlik Adı</label>
-        <input type="text" id="evt_name" placeholder="Örn: Sonbahar Şenliği" class="admin-input"></div>
-      <div class="input-group"><label>Açıklama</label>
-        <textarea id="evt_desc" rows="2" placeholder="Etkinlik detayları..." class="admin-textarea"></textarea></div>
-      <div class="admin-filter-row">
-        <input type="text" id="evt_icon" placeholder="İkon" value="🎉" class="admin-input-sm">
-        <input type="number" id="evt_dur_hr" placeholder="Süre (saat)" value="24" class="admin-input-sm">
-      </div>
-      <div class="admin-filter-row">
-        <label>Ödül Çarpanı (×)</label>
-        <input type="number" id="evt_mult" placeholder="1.5" step="0.1" value="1.5" class="admin-input-sm">
-      </div>
-      <button class="admin-btn green" onclick="window.AP.createCustomEvent()" style="width:100%">🎉 Etkinliği Başlat</button>
-    `);
-  }
-
-  async function createCustomEvent() {
-    const name  = document.getElementById('evt_name')?.value?.trim();
-    const desc  = document.getElementById('evt_desc')?.value?.trim();
-    const icon  = document.getElementById('evt_icon')?.value || '🎉';
-    const hours = safeNum(document.getElementById('evt_dur_hr')?.value, 24);
-    const mult  = safeNum(document.getElementById('evt_mult')?.value, 1.5);
-    if (!name) return _toast('Etkinlik adı gir', 'error');
-    const evt = { active:true, name, desc, icon, mult, startedAt: TS(), endsAt: Date.now() + hours * 3600 * 1000 };
-    await _set('system/events/custom', evt);
-    await _set('broadcast/current', {
-      active: true, text: `${icon} ${name} başladı! ${desc}`,
-      sentAt: TS(), expiresAt: Date.now() + hours * 3600 * 1000
-    });
-    _toast(`🎉 ${name} etkinliği başladı!`);
-    _closeModal();
-    await _adminLog('create_event', { name, hours, mult });
-  }
-
-  async function loadFirebaseStatus() {
-    const div = document.getElementById('fbStatus');
-    if (!div) return;
-    const settings = await _get('system/settings') || {};
-    const events   = await _get('system/events') || {};
-    div.innerHTML = `
-      <table class="admin-mini-table">
-        <tr><td>Bağlantı</td><td><span class="badge-green">✅ Aktif</span></td></tr>
-        <tr><td>Kayıt Durumu</td><td><b>${settings.registrationOpen !== false ? '✅ Açık' : '🔒 Kapalı'}</b></td></tr>
-        <tr><td>Anonim Giriş</td><td><b>${settings.anonLoginOpen !== false ? '✅ Açık' : '🔒 Kapalı'}</b></td></tr>
-        <tr><td>Bakım Modu</td><td><b>${settings.maintenance?.active ? '🔧 Aktif' : '✅ Normal'}</b></td></tr>
-        <tr><td>Aktif Etkinlik</td><td><b>${Object.keys(events).length}</b></td></tr>
-        <tr><td>Oyun Versiyonu</td><td><b>${settings.gameVersion || 'v2.0'}</b></td></tr>
-        <tr><td>Başlangıç Parası</td><td><b>${_fmt(settings.startMoney || 10000)}</b></td></tr>
-      </table>`;
-  }
-
-  function openRawDataViewer() {
-    _modal('📂 Raw Data Görüntüleyici', `
-      <div class="input-group">
-        <label>Firebase Path</label>
-        <input type="text" id="raw_path" placeholder="system/settings" class="admin-input">
-        <button class="admin-btn blue" onclick="window.AP.loadRawData()">Yükle</button>
-      </div>
-      <div class="input-group">
-        <label>JSON Düzenle</label>
-        <textarea id="raw_editor" rows="10" class="admin-textarea admin-mono"></textarea>
-      </div>
-      <div class="admin-action-row">
-        <button class="admin-btn yellow" onclick="window.AP.saveRawData()">💾 Kaydet</button>
-        <button class="admin-btn red" onclick="window.AP.deleteRawData()">🗑️ Sil</button>
-      </div>
-      <div class="admin-muted small">⚠️ Dikkatli kullan! Yanlış veri sistemi bozabilir.</div>
-    `, true);
-  }
-
-  async function loadRawData() {
-    const path = document.getElementById('raw_path')?.value?.trim();
-    if (!path) return _toast('Path gir', 'error');
+  /* ──────────────────────────────────────────────────────────────────────
+     EKONOMİ KONTROL
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderEconomy() {
+    loading('Ekonomi yükleniyor...');
     try {
-      const data = await _get(path);
-      document.getElementById('raw_editor').value = JSON.stringify(data, null, 2);
-    } catch(e) { _toast('Yüklenemedi: ' + e.message, 'error'); }
-  }
+      const [sys, bank, stockPrices] = await Promise.all([
+        dbGet('system'),
+        dbGet('bank'),
+        dbGet('borsaFiyatlar')
+      ]);
 
-  async function saveRawData() {
-    const path = document.getElementById('raw_path')?.value?.trim();
-    const raw  = document.getElementById('raw_editor')?.value;
-    if (!path || !raw) return _toast('Path ve veri gerekli', 'error');
-    if (!confirm('Bu path\'e veriyi kaydetmek istediğine emin misin?')) return;
-    try {
-      const data = JSON.parse(raw);
-      await _set(path, data);
-      _toast('💾 Kaydedildi');
-      await _adminLog('raw_data_save', { path });
-    } catch(e) { _toast('Geçersiz JSON: ' + e.message, 'error'); }
-  }
+      const inflation = sys?.inflation || 0;
+      const taxRate = sys?.taxRate || 0.15;
+      const vatRate = sys?.vatRate || 0.18;
 
-  async function deleteRawData() {
-    const path = document.getElementById('raw_path')?.value?.trim();
-    if (!path) return _toast('Path gir', 'error');
-    if (!confirm(`"${path}" silinecek! Emin misin?`)) return;
-    await _rm(path);
-    _toast('🗑️ Silindi');
-    await _adminLog('raw_data_delete', { path });
-  }
-
-  async function applyThemeColor(type, inputId) {
-    const color = document.getElementById(inputId)?.value;
-    if (!color) return;
-    await _set('system/settings/theme/' + type, color);
-    document.documentElement.style.setProperty('--color-' + type, color);
-    _toast(`🎨 ${type} rengi değiştirildi`);
-  }
-
-  async function applySeasonTheme() {
-    const season = document.getElementById('theme_season')?.value;
-    await _set('system/settings/seasonTheme', season);
-    _toast(`🌸 ${season || 'Varsayılan'} teması uygulandı`);
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BÖLÜM 8: ANALİTİK & RAPORLAMA (23 Özellik)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  function openAnalytics() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = `
-      <div class="admin-section">
-        <h2 class="admin-section-title">📊 Analitik & Raporlama</h2>
-        <div class="admin-analytics-tabs">
-          <button class="admin-tab active" onclick="window.AP._anaTab(this,'economy')">💰 Ekonomi</button>
-          <button class="admin-tab" onclick="window.AP._anaTab(this,'players')">👥 Oyuncular</button>
-          <button class="admin-tab" onclick="window.AP._anaTab(this,'tech')">🔧 Teknik</button>
-        </div>
-        <div id="anaTabContent" class="admin-loading">Yükleniyor...</div>
-      </div>`;
-    window.AP._anaTab(null, 'economy');
-  }
-
-  function _anaTab(el, tab) {
-    document.querySelectorAll('.admin-analytics-tabs .admin-tab').forEach(t => t.classList.remove('active'));
-    if (el) el.classList.add('active');
-    if (tab === 'economy') window.AP.loadEconomyAnalytics();
-    else if (tab === 'players') window.AP.loadPlayerAnalytics();
-    else if (tab === 'tech') window.AP.loadTechAnalytics();
-  }
-
-  async function loadEconomyAnalytics() {
-    const div = document.getElementById('anaTabContent');
-    if (!div) return;
-    div.innerHTML = '<div class="admin-loading">Hesaplanıyor...</div>';
-
-    const [users, bank, txLog] = await Promise.all([
-      _get('users'), _get('bank'), _get('txLog')
-    ]);
-
-    const u = users || {};
-    const b = bank  || {};
-    const now = Date.now();
-    const day = 24 * 3600 * 1000;
-
-    // Para dağılımı
-    const moneyRanges = { '0-1K':0, '1K-10K':0, '10K-100K':0, '100K-1M':0, '1M+':0 };
-    Object.values(u).forEach(usr => {
-      const m = usr.money || 0;
-      if (m < 1000) moneyRanges['0-1K']++;
-      else if (m < 10000) moneyRanges['1K-10K']++;
-      else if (m < 100000) moneyRanges['10K-100K']++;
-      else if (m < 1000000) moneyRanges['100K-1M']++;
-      else moneyRanges['1M+']++;
-    });
-
-    // TX analizi
-    const txData = txLog || {};
-    let todayIn = 0, todayOut = 0, weekIn = 0, weekOut = 0;
-    Object.values(txData).forEach(userTx => {
-      Object.values(userTx || {}).forEach(tx => {
-        if (tx.ts > now - day) {
-          if (tx.type === 'in') todayIn += tx.amount || 0;
-          else todayOut += tx.amount || 0;
-        }
-        if (tx.ts > now - 7 * day) {
-          if (tx.type === 'in') weekIn += tx.amount || 0;
-          else weekOut += tx.amount || 0;
-        }
-      });
-    });
-
-    div.innerHTML = `
-      <div class="admin-row-2">
-        <div class="admin-card">
-          <h3>💰 Para Dağılımı</h3>
-          ${Object.entries(moneyRanges).map(([range, count]) => `
-            <div class="admin-bar-row">
-              <span class="bar-label">${range}</span>
-              <div class="bar-track">
-                <div class="bar-fill" style="width:${Object.values(u).length?Math.floor(count/Object.values(u).length*100):0}%"></div>
+      body().innerHTML = section('💰 Ekonomi Kontrol Paneli', `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <!-- Enflasyon & Vergi -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">📊 Makro Göstergeler</h3>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Enflasyon Oranı: <b style="color:#f59e0b">%${(inflation * 100).toFixed(1)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:6px">
+                  ${inp('newInflation', 'Yeni enflasyon (0-2 arası, örn: 0.45)', 'number', (inflation || 0).toString())}
+                  ${btn('Güncelle', 'window.AP._setInflation()', '#ea580c')}
+                </div>
+                <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+                  ${btn('-0.05', 'window.AP._adjInflation(-0.05)', '#16a34a', 'font-size:11px;padding:5px 10px')}
+                  ${btn('+0.05', 'window.AP._adjInflation(0.05)', '#ef4444', 'font-size:11px;padding:5px 10px')}
+                  ${btn('Sıfırla (0)', 'window.AP._adjInflation(null)', '#475569', 'font-size:11px;padding:5px 10px')}
+                </div>
               </div>
-              <span class="bar-val">${count} oyuncu</span>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Gelir Vergisi: <b style="color:#f59e0b">%${(taxRate * 100).toFixed(1)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:6px">
+                  ${inp('newTaxRate', '0.05 - 0.45 arası', 'number', taxRate.toString())}
+                  ${btn('Güncelle', 'window.AP._setTaxRate()', '#7c3aed')}
+                </div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">KDV: <b style="color:#f59e0b">%${(vatRate * 100).toFixed(1)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:6px">
+                  ${inp('newVatRate', '0.08 - 0.30 arası', 'number', vatRate.toString())}
+                  ${btn('Güncelle', 'window.AP._setVatRate()', '#0891b2')}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Para Arzı -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">💸 Para Arzı Yönetimi</h3>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px">Herkese Para Dağıt (toplam bütçe)</label>
+                <div style="display:flex;gap:8px">
+                  ${inp('massGiveAmount', 'Miktar (₺)', 'number', '')}
+                  ${btn('💰 Dağıt', 'window.AP._massGiveMoney()', '#16a34a')}
+                </div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px">Başlangıç Parası</label>
+                <div style="display:flex;gap:8px">
+                  ${inp('startingMoney', 'Yeni başlangıç (₺)', 'number', (window.GZ_STARTING_MONEY || 25000).toString())}
+                  ${btn('Kaydet', 'window.AP._setStartingMoney()', '#7c3aed')}
+                </div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px">Bakım Modu</label>
+                <div style="display:flex;gap:8px">
+                  ${btn('🔧 Bakım Modunu Aç', 'window.AP._setMaintenance(true)', '#ea580c')}
+                  ${btn('✅ Bakım Modunu Kapat', 'window.AP._setMaintenance(false)', '#16a34a')}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Elmas Mağazası Fiyatları -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">💎 Elmas Mağazası Fiyatları</h3>
+          <div id="elmasConfigArea">Yükleniyor...</div>
+          <button onclick="window.AP._loadElmasFiyatlari()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;margin-top:8px">🔄 Fiyatları Yükle</button>
+        </div>
+
+        <!-- Dünya Olayları -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+          <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">🌍 Ekonomik Olay Tetikle</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${btn('📈 Ekonomik Boom (+%20 gelir)', 'window.AP._triggerEvent(\"boom\")', '#16a34a')}
+            ${btn('📉 Ekonomik Kriz (-%20 değer)', 'window.AP._triggerEvent(\"crisis\")', '#ef4444')}
+            ${btn('🌾 Hasat Bolluğu', 'window.AP._triggerEvent(\"harvest\")', '#ca8a04')}
+            ${btn('🏭 Sanayi Patlaması', 'window.AP._triggerEvent(\"industrial\")', '#0891b2')}
+            ${btn('💱 Döviz Krizi', 'window.AP._triggerEvent(\"forex\")', '#7c3aed')}
+            ${btn('🔥 Enflasyon Atağı', 'window.AP._triggerEvent(\"inflation_spike\")', '#ea580c')}
+          </div>
+        </div>
+      `);
+
+      // Elmas fiyatlarını yükle
+      window.AP._loadElmasFiyatlari();
+    } catch (e) {
+      body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`;
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     KREDİ BAŞVURULARI
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderKrediOnay() {
+    loading('Kredi başvuruları yükleniyor...');
+    try {
+      const apps = await dbGet('krediBasvurulari');
+      const list = apps ? Object.entries(apps).filter(([, a]) => a?.status === 'pending') : [];
+
+      // Badge güncelle
+      const badge = document.getElementById('krediOnayBadge');
+      if (badge) { badge.hidden = list.length === 0; badge.textContent = list.length || ''; }
+
+      body().innerHTML = section('💳 Kredi Başvuruları', `
+        <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center">
+          <span style="color:#94a3b8;font-size:13px">Bekleyen: <b style="color:#f59e0b">${list.length}</b> başvuru</span>
+          ${btn('🔄 Yenile', 'window.AP.navTo(null,\"krediOnay\")', '#334155', 'font-size:11px;padding:6px 12px')}
+        </div>
+        ${list.length === 0 ? '<div style="text-align:center;color:#475569;padding:40px;background:#0d1a2e;border-radius:12px;border:1px solid #1a2f4a">✅ Bekleyen kredi başvurusu yok</div>' : ''}
+        ${list.map(([key, a]) => `
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:18px;margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:6px">${esc(a.username || a.uid?.slice(0, 8))} — ${esc(a.type || 'Kredi')}</div>
+                <div style="font-size:12px;color:#94a3b8;display:flex;flex-wrap:wrap;gap:16px">
+                  <span>💰 Tutar: <b style="color:#f59e0b">${fmt(a.amount || 0)}</b></span>
+                  <span>📅 Vade: <b style="color:#60a5fa">${a.term || '-'} ay</b></span>
+                  <span>📊 Skor: <b style="color:#a78bfa">${a.creditScore || '-'}</b></span>
+                  <span>🕐 Tarih: ${ts(a.appliedAt)}</span>
+                </div>
+                ${a.note ? `<div style="margin-top:8px;font-size:11px;color:#64748b;background:#080d1a;padding:8px;border-radius:6px">"${esc(a.note)}"</div>` : ''}
+              </div>
+              <div style="display:flex;gap:8px">
+                ${btn('✅ Onayla', `window.AP._krediOnayla('${key}','${a.uid}',${a.amount || 0})`, '#16a34a')}
+                ${btn('❌ Reddet', `window.AP._krediReddet('${key}','${a.uid}')`, '#ef4444')}
+              </div>
+            </div>
+          </div>`).join('')}
+      `);
+    } catch (e) {
+      body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`;
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     VERGİ & FAİZ
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderVergi() {
+    loading('Vergi paneli yükleniyor...');
+    try {
+      const sys = await dbGet('system');
+      const taxRate = sys?.taxRate || 0.15;
+      const vatRate = sys?.vatRate || 0.18;
+      const corporateTax = sys?.corporateTax || 0.22;
+      const interestRate = sys?.interestRate || 0.30;
+      const penaltyRate = sys?.penaltyRate || 0.05;
+      const graceDays = sys?.taxGraceDays || 7;
+
+      // Vergi borçları
+      const users = await dbGet('users');
+      const debtors = users ? Object.entries(users).filter(([, u]) => (u?.taxDebt || 0) > 0) : [];
+
+      body().innerHTML = section('🏛️ Vergi & Faiz Yönetimi', `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">⚙️ Vergi Oranları</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Gelir Vergisi: <b style="color:#f59e0b">%${(taxRate*100).toFixed(0)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_income','0.05-0.45','number',taxRate.toString())}${btn('Güncelle','window.AP._updateTax(\"taxRate\",\"vt_income\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">KDV: <b style="color:#f59e0b">%${(vatRate*100).toFixed(0)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_vat','0.08-0.30','number',vatRate.toString())}${btn('Güncelle','window.AP._updateTax(\"vatRate\",\"vt_vat\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Kurumlar Vergisi: <b style="color:#f59e0b">%${(corporateTax*100).toFixed(0)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_corp','0.15-0.40','number',corporateTax.toString())}${btn('Güncelle','window.AP._updateTax(\"corporateTax\",\"vt_corp\")','#3b82f6')}</div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">💰 Faiz & Ceza</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Gecikme Faizi: <b style="color:#ef4444">%${(interestRate*100).toFixed(0)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_int','0.10-0.80','number',interestRate.toString())}${btn('Güncelle','window.AP._updateTax(\"interestRate\",\"vt_int\")','#ea580c')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Ceza Oranı: <b style="color:#ef4444">%${(penaltyRate*100).toFixed(0)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_pen','0.01-0.30','number',penaltyRate.toString())}${btn('Güncelle','window.AP._updateTax(\"penaltyRate\",\"vt_pen\")','#ea580c')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Vade (gün): <b style="color:#f59e0b">${graceDays}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('vt_grace','3-30','number',graceDays.toString())}${btn('Güncelle','window.AP._updateTax(\"taxGraceDays\",\"vt_grace\")','#7c3aed')}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vergi Borçluları -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">⚠️ Vergi Borçluları (${debtors.length})</h3>
+          ${debtors.length === 0 ? '<div style="color:#475569;font-size:13px">Vergi borcu olan kullanıcı yok ✅</div>' : ''}
+          ${debtors.map(([uid, u]) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #0d1a2e;padding:10px 0;flex-wrap:wrap;gap:8px">
+              <div>
+                <span style="color:#e2e8f0;font-weight:600">${esc(u.username || uid.slice(0,8))}</span>
+                <span style="color:#ef4444;font-weight:700;margin-left:12px">${fmt(u.taxDebt)}</span>
+                <span style="color:#475569;font-size:11px;margin-left:8px">borç</span>
+              </div>
+              <div style="display:flex;gap:6px">
+                ${btn('💸 Zorla Tahsil', `window.AP._forceTax('${uid}',${u.taxDebt})`, '#ef4444', 'font-size:11px;padding:6px 12px')}
+                ${btn('📋 Faiz Uygula', `window.AP._applyInterest('${uid}',${u.taxDebt})`, '#ea580c', 'font-size:11px;padding:6px 12px')}
+                ${btn('✅ Sil (Af)', `window.AP._forgiveTax('${uid}')`, '#16a34a', 'font-size:11px;padding:6px 12px')}
+              </div>
             </div>`).join('')}
         </div>
-        <div class="admin-card">
-          <h3>📈 İşlem Analizi</h3>
-          <table class="admin-mini-table">
-            <tr><td>Bugün Toplam Gelir</td><td><b>${_fmt(todayIn)}</b></td></tr>
-            <tr><td>Bugün Toplam Gider</td><td><b>${_fmt(todayOut)}</b></td></tr>
-            <tr><td>Bugün Net</td><td><b style="color:${todayIn-todayOut>=0?'#16a34a':'#dc2626'}">${_fmt(todayIn-todayOut)}</b></td></tr>
-            <tr><td>Haftalık Gelir</td><td><b>${_fmt(weekIn)}</b></td></tr>
-            <tr><td>Haftalık Gider</td><td><b>${_fmt(weekOut)}</b></td></tr>
-            <tr><td>Haftalık Net</td><td><b style="color:${weekIn-weekOut>=0?'#16a34a':'#dc2626'}">${_fmt(weekIn-weekOut)}</b></td></tr>
-          </table>
-        </div>
-      </div>
-      <div class="admin-card">
-        <h3>🏦 Banka Analizi</h3>
-        <div class="admin-row-2">
-          ${(() => {
-            let totalBal = 0, totalInv = 0, totalDebt = 0;
-            Object.values(b).forEach(bk => { totalBal += bk.balance||0; totalInv += bk.investment||0; totalDebt += bk.loan||0; });
-            return `
-              <table class="admin-mini-table">
-                <tr><td>Toplam Banka Bakiyesi</td><td><b>${_fmt(totalBal)}</b></td></tr>
-                <tr><td>Toplam Yatırım</td><td><b>${_fmt(totalInv)}</b></td></tr>
-                <tr><td>Toplam Borç</td><td><b style="color:#dc2626">${_fmt(totalDebt)}</b></td></tr>
-                <tr><td>Net Banka Varlığı</td><td><b>${_fmt(totalBal + totalInv - totalDebt)}</b></td></tr>
-              </table>`;
-          })()}
-        </div>
-      </div>`;
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
   }
 
-  async function loadPlayerAnalytics() {
-    const div = document.getElementById('anaTabContent');
-    if (!div) return;
-    div.innerHTML = '<div class="admin-loading">Analiz yapılıyor...</div>';
+  /* ──────────────────────────────────────────────────────────────────────
+     MERKEZ BANKASI
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderMerkezBankasi() {
+    loading('Merkez Bankası yükleniyor...');
+    try {
+      const bank = await dbGet('bank');
+      const repoRate = bank?.repoRate || 0.42;
+      const depositRate = bank?.depositRate || 0.38;
+      const loanRate = bank?.loanRate || 0.55;
+      const minBalance = bank?.minBalance || 0;
 
-    const users = await _get('users') || {};
-    const now = Date.now();
-    const day = 24 * 3600 * 1000;
-
-    const uids = Object.keys(users);
-    const totalUsers   = uids.length;
-    const day1         = uids.filter(u => users[u].createdAt && (now - users[u].createdAt) < day).length;
-    const day7         = uids.filter(u => users[u].lastLogin  && (now - users[u].lastLogin)  < 7*day).length;
-    const day30        = uids.filter(u => users[u].lastLogin  && (now - users[u].lastLogin)  < 30*day).length;
-    const day14inact   = uids.filter(u => !users[u].lastLogin || (now - users[u].lastLogin) > 14*day).length;
-    const retention7   = totalUsers ? ((day7 / totalUsers) * 100).toFixed(1) : 0;
-    const retention30  = totalUsers ? ((day30 / totalUsers) * 100).toFixed(1) : 0;
-
-    // Seviye dağılımı
-    const lvlGroups = { '1-10':0, '11-25':0, '26-50':0, '51-75':0, '76-100':0 };
-    uids.forEach(u => {
-      const lv = users[u].level || 1;
-      if (lv <= 10)       lvlGroups['1-10']++;
-      else if (lv <= 25)  lvlGroups['11-25']++;
-      else if (lv <= 50)  lvlGroups['26-50']++;
-      else if (lv <= 75)  lvlGroups['51-75']++;
-      else                lvlGroups['76-100']++;
-    });
-
-    div.innerHTML = `
-      <div class="admin-row-2">
-        <div class="admin-card">
-          <h3>📊 Oyuncu Tutundurma</h3>
-          <table class="admin-mini-table">
-            <tr><td>Bugün Yeni Kayıt</td><td><b>${day1}</b></td></tr>
-            <tr><td>7 Günlük Aktif (DAU/WAU)</td><td><b>${day7}</b></td></tr>
-            <tr><td>30 Günlük Aktif (MAU)</td><td><b>${day30}</b></td></tr>
-            <tr><td>14+ Gün İnaktif</td><td><b style="color:#dc2626">${day14inact}</b></td></tr>
-            <tr><td>7 Gün Tutundurma</td><td><b>${retention7}%</b></td></tr>
-            <tr><td>30 Gün Tutundurma</td><td><b>${retention30}%</b></td></tr>
-          </table>
+      body().innerHTML = section('🏦 Merkez Bankası', `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+          ${card('REPO ORANI', '%'+(repoRate*100).toFixed(1), null, '#f59e0b')}
+          ${card('MEVDUAT ORANI', '%'+(depositRate*100).toFixed(1), null, '#22c55e')}
+          ${card('KREDİ ORANI', '%'+(loanRate*100).toFixed(1), null, '#ef4444')}
+          ${card('MİN. BAKİYE', fmt(minBalance), null, '#60a5fa')}
         </div>
-        <div class="admin-card">
-          <h3>🏅 Seviye Dağılımı</h3>
-          ${Object.entries(lvlGroups).map(([range, count]) => `
-            <div class="admin-bar-row">
-              <span class="bar-label">Lv ${range}</span>
-              <div class="bar-track">
-                <div class="bar-fill" style="width:${totalUsers?Math.floor(count/totalUsers*100):0}%;background:#3b82f6"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">📊 Faiz Oranları</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Repo Oranı (Para Politikası)</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mb_repo','0.10-2.00','number',repoRate.toString())}${btn('Güncelle','window.AP._setRepoRate()','#f59e0b')}</div>
               </div>
-              <span class="bar-val">${count}</span>
-            </div>`).join('')}
-        </div>
-      </div>`;
-  }
-
-  async function loadTechAnalytics() {
-    const div = document.getElementById('anaTabContent');
-    if (!div) return;
-    const logs     = await _get('adminLogs') || {};
-    const security = await _get('security/founderAttempts') || {};
-    const allLogs  = Object.values(logs);
-    const allSec   = Object.values(security);
-
-    div.innerHTML = `
-      <div class="admin-row-2">
-        <div class="admin-card">
-          <h3>🔧 Sistem Sağlığı</h3>
-          <table class="admin-mini-table">
-            <tr><td>Firebase</td><td><span class="badge-green">✅ Bağlı</span></td></tr>
-            <tr><td>Toplam Admin İşlemi</td><td><b>${allLogs.length}</b></td></tr>
-            <tr><td>Admin Giriş Denemesi</td><td><b>${allSec.length}</b></td></tr>
-            <tr><td>Başarılı Admin Giriş</td><td><b>${allSec.filter(s=>s.success).length}</b></td></tr>
-            <tr><td>Başarısız Admin Giriş</td><td><b style="color:#dc2626">${allSec.filter(s=>!s.success).length}</b></td></tr>
-          </table>
-        </div>
-        <div class="admin-card">
-          <h3>📋 Son Admin İşlemleri</h3>
-          ${allLogs.sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,10).map(l =>
-            `<div class="admin-log-item"><span class="log-time">${new Date(l.ts||0).toLocaleTimeString('tr-TR')}</span> <span class="log-action">${l.action}</span></div>`
-          ).join('')}
-        </div>
-      </div>`;
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     ANA PANEL UI — Sidebar + Router
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  function openAdminPanel() {
-    if (!window.GZ_FOUNDER_VERIFIED) { console.warn('[Admin] GZ_FOUNDER_VERIFIED yok'); return; }
-    window._adminTarget = 'adminScreenBody';
-    const gs = document.getElementById('gameScreen');
-    const as = document.getElementById('adminScreen');
-    if (gs) { gs.classList.remove('active'); gs.style.display='none'; }
-    if (as) as.style.display = 'flex';
-    renderDashboard();
-    _checkKrediOnayBadge();
-  }
-
-  function closeAdminPanel() { /* Artık oyuna dön yok */ }
-
-  async function _checkKrediOnayBadge() {
-    try {
-      const snap = await db().ref('krediBasvurular').orderByChild('durum').equalTo('beklemede').once('value');
-      const n = snap.numChildren();
-      const el = document.getElementById('krediOnayBadge');
-      if (el) { el.textContent=n; el.hidden=n===0; }
-    } catch(e) {}
-  }
-
-  async function _checkKimlikBadge() {
-    try {
-      const snap = await db().ref('approvals/idCard').once('value');
-      const all = snap.val() || {};
-      const n = Object.values(all).filter(a => a.status === 'pending').length;
-      const el = document.getElementById('kimlikOnayBadge');
-      if (el) { el.textContent = n; el.hidden = n === 0; }
-    } catch(e) {}
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     KİMLİK KARTI BAŞVURULARI PANELİ
-     ══════════════════════════════════════════════════════════════════════════ */
-  async function openKimlikOnayPanel() {
-    _adminBody('<div style="padding:24px;color:#94a3b8;font-size:13px">🪪 Kimlik başvuruları yükleniyor...</div>');
-
-    const snap = await db().ref('approvals/idCard').once('value');
-    const all  = snap.val() || {};
-    const list = Object.entries(all).sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
-
-    const bekleyenler = list.filter(([,v]) => v.status === 'pending');
-    const gerceklesens = list.filter(([,v]) => v.status !== 'pending');
-
-    function _kart(id, d) {
-      const ts = new Date(d.ts||0).toLocaleString('tr-TR');
-      const renk = d.status==='approved' ? '#22c55e' : d.status==='rejected' ? '#ef4444' : '#f59e0b';
-      const durumEmoji = d.status==='approved' ? '✅' : d.status==='rejected' ? '❌' : '⏳';
-      const durumAd = d.status==='approved' ? 'Onaylandı' : d.status==='rejected' ? 'Reddedildi' : 'Bekliyor';
-      return `
-        <div style="background:#0d1a2e;border:1px solid ${renk}44;border-radius:10px;padding:14px;margin-bottom:10px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-size:12px;font-weight:700;color:${renk}">${durumEmoji} ${durumAd}</span>
-            <span style="font-size:10px;color:#334155">#${id.slice(-10)}</span>
-          </div>
-          <div style="font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:4px">👤 ${d.username || 'Anonim'}</div>
-          <div style="font-size:11px;color:#475569;margin-bottom:8px">
-            💰 Ücret: ${_fmt(d.fee || 10000)} &nbsp;|&nbsp; 🕐 ${ts}
-            ${d.approvedBy ? ` &nbsp;|&nbsp; Onaylayan: ${d.approvedBy}` : ''}
-            ${d.rejectedBy ? ` &nbsp;|&nbsp; Reddeden: ${d.rejectedBy}` : ''}
-          </div>
-          ${d.status === 'pending' ? `
-            <div style="display:flex;gap:8px">
-              <button onclick="(async()=>{
-                await window.GZX_adminOnayKimlik?.('${id}','approve');
-                window.AP.navTo(null,'kimlikOnay');
-              })()" style="flex:1;background:#064e3b;color:#4ade80;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">
-                ✅ ONAYLA
-              </button>
-              <button onclick="(async()=>{
-                if(!confirm('Bu başvuruyu reddet ve ücreti iade et?')) return;
-                await window.GZX_adminOnayKimlik?.('${id}','reject');
-                window.AP.navTo(null,'kimlikOnay');
-              })()" style="flex:1;background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">
-                ❌ REDDET (İade Et)
-              </button>
-            </div>` : ''}
-        </div>`;
-    }
-
-    _adminBody(_apSection('🪪 Kimlik Kartı Başvuruları', `
-      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
-          <div style="font-size:28px;font-weight:900;color:#f59e0b">${bekleyenler.length}</div>
-          <div style="font-size:11px;color:#475569;margin-top:2px">Bekleyen</div>
-        </div>
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
-          <div style="font-size:28px;font-weight:900;color:#22c55e">${gerceklesens.filter(([,v])=>v.status==='approved').length}</div>
-          <div style="font-size:11px;color:#475569;margin-top:2px">Onaylanan</div>
-        </div>
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center;min-width:120px">
-          <div style="font-size:28px;font-weight:900;color:#ef4444">${gerceklesens.filter(([,v])=>v.status==='rejected').length}</div>
-          <div style="font-size:11px;color:#475569;margin-top:2px">Reddedilen</div>
-        </div>
-        <button onclick="window.AP.navTo(null,'kimlikOnay')"
-          style="margin-left:auto;background:#1e3a5f;color:#60a5fa;border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;cursor:pointer;align-self:center">
-          🔄 Yenile
-        </button>
-      </div>
-
-      ${bekleyenler.length > 0 ? `
-        <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">⏳ BEKLEYENLEr (${bekleyenler.length})</div>
-        ${bekleyenler.map(([id,d]) => _kart(id, d)).join('')}
-      ` : '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:20px;text-align:center;color:#22c55e;font-weight:700;margin-bottom:20px">✅ Bekleyen başvuru yok!</div>'}
-
-      ${gerceklesens.length > 0 ? `
-        <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#475569;margin:20px 0 10px">📋 GEÇMİŞ (${gerceklesens.length})</div>
-        ${gerceklesens.slice(0,20).map(([id,d]) => _kart(id, d)).join('')}
-      ` : ''}
-    `));
-
-    _checkKimlikBadge();
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     BORÇ & MAHKEME DAVA PANELİ
-     ══════════════════════════════════════════════════════════════════════════ */
-  async function openBorcDavalarPanel() {
-    _adminBody('<div style="padding:24px;color:#94a3b8;font-size:13px">⚖️ Davalar yükleniyor...</div>');
-
-    const [davalarSnap, borclarSnap] = await Promise.all([
-      db().ref('mahkeme/davalar').once('value'),
-      db().ref('peerLoans').once('value'),
-    ]);
-
-    const davalar = davalarSnap.val() || {};
-    const borclar = borclarSnap.val() || {};
-
-    const davaList = Object.entries(davalar)
-      .filter(([,d]) => d.tip === 'borc_davasi')
-      .sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
-
-    const aktifBorclar = Object.entries(borclar)
-      .filter(([,b]) => b.status === 'aktif')
-      .sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
-
-    function _davaKart(id, d) {
-      const renk = d.status === 'kararveriildi' ? '#22c55e' : d.status === 'reddedildi' ? '#ef4444' : '#f59e0b';
-      return `
-        <div style="background:#0d1a2e;border:1px solid ${renk}44;border-radius:10px;padding:14px;margin-bottom:10px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <span style="font-size:12px;font-weight:700;color:${renk}">⚖️ Dava #${id.slice(-8)}</span>
-            <span style="font-size:10px;color:#475569">${new Date(d.ts||0).toLocaleDateString('tr-TR')}</span>
-          </div>
-          <div style="font-size:12px;color:#e2e8f0;margin-bottom:4px">
-            👤 Davacı: <b>${d.davacıAd}</b> (TC: ${d.davacıTC || 'N/A'})<br>
-            👤 Davalı: <b>${d.davalıAd}</b> (TC: ${d.davalıTC || 'N/A'})
-          </div>
-          <div style="font-size:12px;color:#60a5fa;font-weight:700;margin-bottom:4px">
-            💰 Talep: ${_fmt(d.talepMiktar)}
-          </div>
-          <div style="font-size:11px;color:#475569;margin-bottom:8px">
-            📋 ${d.aciklama}<br>
-            🔑 Delil: ${d.delil}
-          </div>
-          ${d.status === 'inceleniyor' ? `
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button onclick="(async()=>{
-                if(!confirm('Davacı lehine karar: davalıdan ₺${d.talepMiktar} kesilsin mi?')) return;
-                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'kararveriildi',karar:'davaci_lehine',kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
-                await window.addCash?.('${d.davacıUid}',${d.talepMiktar},'Mahkeme kararı tahsilat');
-                await window.spendCash?.('${d.davalıUid}',${d.talepMiktar},'Mahkeme kararı borç');
-                await window.GZX_notify?.('${d.davacıUid}','⚖️ Mahkeme kazandınız! ₺${(d.talepMiktar||0).toLocaleString('tr-TR')} hesabınıza aktarıldı.','success');
-                await window.GZX_notify?.('${d.davalıUid}','⚖️ Mahkeme kaybettiniz. ₺${(d.talepMiktar||0).toLocaleString('tr-TR')} hesabınızdan kesildi.','error');
-                window.AP.navTo(null,'borcDavalar');
-              })()" style="background:#064e3b;color:#4ade80;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
-                ✅ Davacı Lehine Karar
-              </button>
-              <button onclick="(async()=>{
-                if(!confirm('Davayı reddet (davalı lehine)?')) return;
-                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'reddedildi',karar:'davali_lehine',kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
-                await window.GZX_notify?.('${d.davacıUid}','⚖️ Davanız reddedildi.','warn');
-                await window.GZX_notify?.('${d.davalıUid}','⚖️ Dava lehinize sonuçlandı.','success');
-                window.AP.navTo(null,'borcDavalar');
-              })()" style="background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
-                ❌ Davayı Reddet
-              </button>
-              <button onclick="(async()=>{
-                const uzlasma=parseInt(prompt('Uzlaşma miktarı (₺)?')||0);
-                if(!uzlasma) return;
-                await firebase.database().ref('mahkeme/davalar/${id}').update({status:'uzlasma',karar:'uzlasma',uzlasmaMiktar:uzlasma,kararTs:Date.now(),hakim:window.GZ?.data?.username||'Admin'});
-                await window.addCash?.('${d.davacıUid}',uzlasma,'Uzlaşma ödemesi');
-                await window.spendCash?.('${d.davalıUid}',uzlasma,'Uzlaşma ödemesi');
-                window.AP.navTo(null,'borcDavalar');
-              })()" style="background:#1e3a5f;color:#60a5fa;border:none;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">
-                🤝 Uzlaşma
-              </button>
-            </div>` : `<span style="font-size:11px;color:${renk}">Karar: ${d.karar} ${d.hakim ? '| Hakim: '+d.hakim : ''}</span>`}
-        </div>`;
-    }
-
-    _adminBody(_apSection('⚖️ Borç Davaları & Mahkeme', `
-      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
-          <div style="font-size:28px;font-weight:900;color:#f59e0b">${davaList.filter(([,d])=>d.status==='inceleniyor').length}</div>
-          <div style="font-size:11px;color:#475569">Bekleyen Dava</div>
-        </div>
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
-          <div style="font-size:28px;font-weight:900;color:#3b82f6">${aktifBorclar.length}</div>
-          <div style="font-size:11px;color:#475569">Aktif Borç</div>
-        </div>
-        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:10px;padding:14px 20px;text-align:center">
-          <div style="font-size:28px;font-weight:900;color:#ef4444">${aktifBorclar.filter(([,b])=>Date.now()>b.vadeTarihi).length}</div>
-          <div style="font-size:11px;color:#475569">Vadesi Geçmiş</div>
-        </div>
-      </div>
-
-      <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">⚖️ MAHKEME DOVALARI</div>
-      ${davaList.length ? davaList.map(([id,d])=>_davaKart(id,d)).join('') : '<div style="color:#334155;font-size:12px;padding:14px;text-align:center">Henüz dava yok</div>'}
-
-      <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#475569;margin:20px 0 10px">💰 TÜM AKTİF BORÇLAR</div>
-      ${aktifBorclar.slice(0,30).map(([id,b]) => `
-        <div style="background:#0d1a2e;border:1px solid ${Date.now()>b.vadeTarihi?'#ef444455':'#1a2f4a'};border-radius:8px;padding:12px;margin-bottom:8px;font-size:12px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="color:#e2e8f0;font-weight:700">${b.borcluAd} → ${b.alacakliAd}</span>
-            <span style="color:${Date.now()>b.vadeTarihi?'#ef4444':'#22c55e'};font-weight:700">${Date.now()>b.vadeTarihi?'🔴 GECİKMİŞ':'✅ Aktif'}</span>
-          </div>
-          <div style="color:#60a5fa">₺${(b.miktar-(b.odenemisMiktar||0)).toLocaleString('tr-TR')} kalan / ₺${b.miktar?.toLocaleString('tr-TR')} toplam</div>
-          <div style="color:#475569;font-size:11px">Vade: ${new Date(b.vadeTarihi).toLocaleDateString('tr-TR')} | ${b.aciklama||''}</div>
-        </div>`).join('') || '<div style="color:#334155;font-size:12px;padding:14px;text-align:center">Aktif borç yok</div>'}
-    `));
-  }
-
-  function openTxLog() {
-    _adminBody(_apSection('🔍 Şüpheli Hareketler', '<div style="color:#475569;padding:20px;text-align:center">Bu bölüm yakında aktif olacak</div>'));
-  }
-  function openEventsManager() {
-    _adminBody(_apSection('⚡ Etkinlik Yönetimi', '<div style="color:#475569;padding:20px;text-align:center">Bu bölüm yakında aktif olacak</div>'));
-  }
-
-
-    document.querySelectorAll('.admin-nav-btn,.asnb').forEach(b=>b.classList.remove('active'));
-    if (el) el.classList.add('active');
-    const routes = {
-      dashboard:  renderDashboard,
-      users:      openAllUsersModal,
-      economy:    openGlobalEconModal,
-      krediOnay:  openKrediOnayPanel,
-      kimlikOnay: openKimlikOnayPanel,
-      borcDavalar:openBorcDavalarPanel,
-      vergi:      openVergiPanel,
-      merkez:     openMerkezBankasiPanel,
-      borsa:      openBorsaPanel,
-      kripto:     openKriptoPanel,
-      games:      openGameManagement,
-      news:       openNewsManager,
-      chat:       openChatManager,
-      security:   openSecurityLogs,
-      system:     openSystemSettings,
-      analytics:  openAnalytics,
-      txlog:      openTxLog,
-      events:     openEventsManager,
-    };
-    const fn = routes[section];
-    if (typeof fn==='function') fn.call(window.AP);
-    else _adminBody('<div style="padding:40px;text-align:center;color:#64748b">Bu bölüm henüz geliştiriliyor...</div>');
-    _checkKrediOnayBadge();
-    _checkKimlikBadge();
-  }
-
-  /* Topbar Butonu */
-  function activateFounderBtn() {
-    const btn = document.getElementById('founderTriggerBtn');
-    if (!btn) return;
-    btn.classList.add('active');
-    btn.title = '👑 Yetkili Paneli';
-    btn.onclick = null;
-    btn.style.display = '';
-    btn.addEventListener('click', ()=>{
-      if (window.GZ_FOUNDER_VERIFIED) openAdminPanel();
-      else if (typeof window.openPasswordModal==='function') window.openPasswordModal();
-    });
-  }
-
-  /* Admin giriş bildirimi */
-  // Kısa yardımcı
-  function _adminBody(html) {
-    const el = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (el) el.innerHTML = html;
-  }
-  function _apSection(title, content) {
-    return '<div style="padding:24px;max-width:1200px">' +
-      '<h2 style="color:#e2e8f0;margin:0 0 20px;font-size:20px;font-weight:800;padding-bottom:12px;border-bottom:1px solid #1a2f4a">' + title + '</h2>' +
-      content + '</div>';
-  }
-  function _statCard(label, value, color, sub) {
-    return '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px;text-align:center">' +
-      '<div style="color:#475569;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:4px">' + label + '</div>' +
-      '<div style="font-size:24px;font-weight:900;color:' + (color||'#e2e8f0') + '">' + value + '</div>' +
-      (sub ? '<div style="color:#334155;font-size:10px;margin-top:2px">' + sub + '</div>' : '') +
-    '</div>';
-  }
-
-  /* ─── Kredi Onay Paneli ─── */
-  async function openKrediOnayPanel() {
-    _adminBody(_apSection('💳 Kredi Başvuruları', '<div id="kOnayContent"><div class="admin-loading">Yükleniyor...</div></div>'));
-    const snap = await db().ref('krediBasvurular').once('value');
-    const all = Object.values(snap.val()||{});
-    const pend = all.filter(b=>b&&b.durum==='beklemede').sort((a,b)=>(b.ts||0)-(a.ts||0));
-    const appr = all.filter(b=>b&&b.durum==='onaylandi').sort((a,b)=>(b.onayTs||0)-(a.onayTs||0)).slice(0,15);
-    const rej  = all.filter(b=>b&&b.durum==='reddedildi').sort((a,b)=>(b.redTs||0)-(a.redTs||0)).slice(0,10);
-    const el = document.getElementById('kOnayContent');
-    if (!el) return;
-
-    // İstatistikler
-    let h = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">' +
-      _statCard('BEKLEYEN',''+pend.length,'#f59e0b') +
-      _statCard('ONAYLANAN',''+appr.length,'#22c55e') +
-      _statCard('REDDEDİLEN',''+rej.length,'#ef4444') +
-    '</div>';
-
-    h += '<button class="admin-btn-sm" onclick="window.AP.openKrediOnayPanel()" style="margin-bottom:12px">🔄 Yenile</button>';
-
-    if (!pend.length) {
-      h += '<div style="background:#0d1a2e;border-radius:12px;padding:40px;text-align:center;color:#475569;margin-bottom:16px">✅ Bekleyen başvuru yok</div>';
-    } else {
-      h += '<div style="color:#f59e0b;font-weight:700;margin-bottom:10px;font-size:14px">⏳ Bekleyen Başvurular ('+pend.length+')</div>';
-      h += pend.map(b=>{
-        const nr=b.krediNotu||0;
-        const nc=nr>=70?'#22c55e':nr>=50?'#f59e0b':'#ef4444';
-        return '<div style="background:#0d1a2e;border:1px solid #f59e0b33;border-radius:12px;padding:16px;margin-bottom:10px">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">' +
-            '<div><div style="font-weight:700;color:#e2e8f0;font-size:16px">' + (b.username||b.uid) + '</div>' +
-            '<div style="color:#475569;font-size:12px;margin-top:2px">' + (b.bankaAdi||b.bankaId) + ' • Faiz: %' + ((b.faizOrani||0)*100).toFixed(1) + '</div>' +
-            (b.aciklama?'<div style="color:#94a3b8;font-size:12px;font-style:italic;margin-top:3px">"'+b.aciklama+'"</div>':'') + '</div>' +
-            '<div style="text-align:right"><div style="font-size:26px;font-weight:900;color:#22c55e">₺' + (b.miktar||0).toLocaleString('tr-TR') + '</div>' +
-            '<div style="color:#475569;font-size:10px">' + (b.ts?new Date(b.ts).toLocaleString('tr-TR'):'-') + '</div></div>' +
-          '</div>' +
-          '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">' +
-            '<div style="background:#060c18;border-radius:8px;padding:8px;text-align:center"><div style="color:#475569;font-size:9px">NOTER</div><div style="color:'+nc+';font-weight:700">'+(b.krediNotu||'?')+'/100</div></div>' +
-            '<div style="background:#060c18;border-radius:8px;padding:8px;text-align:center"><div style="color:#475569;font-size:9px">MEVCUT BORÇ</div><div style="color:#ef4444;font-weight:700">₺'+(b.mevcutBorc||0).toLocaleString()+'</div></div>' +
-            '<div style="background:#060c18;border-radius:8px;padding:8px;text-align:center"><div style="color:#475569;font-size:9px">HAFTALIk FAİZ</div><div style="color:#f59e0b;font-weight:700">₺'+((b.miktar||0)*((b.faizOrani||0)/52)).toFixed(2)+'</div></div>' +
-            '<div style="background:#060c18;border-radius:8px;padding:8px;text-align:center"><div style="color:#475569;font-size:9px">UID</div><div style="color:#334155;font-size:9px;word-break:break-all">'+b.uid.slice(0,8)+'...</div></div>' +
-          '</div>' +
-          '<div style="display:flex;gap:8px">' +
-            '<button class="admin-btn green" style="flex:1;padding:12px;font-size:14px" data-uid="'+b.uid+'" data-bid="'+b.bankaId+'" data-mik="'+(b.miktar||0)+'" onclick="window._aKOnay(this)">✅ ONAYLA</button>' +
-            '<button class="admin-btn red"   style="flex:1;padding:12px;font-size:14px" data-uid="'+b.uid+'" data-bid="'+b.bankaId+'" onclick="window._aKReddet(this)">❌ REDDET</button>' +
-            '<button class="admin-btn teal"  style="padding:12px 16px" onclick="window.AP.openUserDetail && window.AP.openUserDetail(\''+b.uid+'\')">👤</button>' +
-          '</div></div>';
-      }).join('');
-    }
-
-    // Onay geçmişi tablosu
-    if (appr.length) {
-      h += '<h3 style="color:#22c55e;font-size:14px;font-weight:700;margin:20px 0 10px">✅ Son Onaylananlar</h3>';
-      h += '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kullanıcı</th><th>Banka</th><th>Tutar</th><th>Faiz/Hafta</th><th>Tarih</th></tr></thead><tbody>' +
-        appr.map(b=>'<tr><td><b>'+(b.username||b.uid)+'</b></td><td>'+(b.bankaAdi||b.bankaId)+'</td><td style="color:#22c55e">+₺'+(b.miktar||0).toLocaleString()+'</td><td style="color:#f59e0b">₺'+((b.miktar||0)*((b.faizOrani||0)/52)).toFixed(2)+'</td><td style="color:#475569">'+(b.onayTs?new Date(b.onayTs).toLocaleDateString('tr-TR'):'-')+'</td></tr>').join('') +
-        '</tbody></table></div>';
-    }
-    if (rej.length) {
-      h += '<h3 style="color:#ef4444;font-size:14px;font-weight:700;margin:20px 0 10px">❌ Son Reddedilenler</h3>';
-      h += '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kullanıcı</th><th>Banka</th><th>Tutar</th><th>Sebep</th><th>Tarih</th></tr></thead><tbody>' +
-        rej.map(b=>'<tr><td>'+(b.username||b.uid)+'</td><td>'+(b.bankaAdi||b.bankaId)+'</td><td style="color:#ef4444">₺'+(b.miktar||0).toLocaleString()+'</td><td style="color:#475569;font-size:11px">'+(b.redSebebi||'-')+'</td><td style="color:#475569">'+(b.redTs?new Date(b.redTs).toLocaleDateString('tr-TR'):'-')+'</td></tr>').join('') +
-        '</tbody></table></div>';
-    }
-    el.innerHTML = h;
-  }
-
-  window._aKOnay = async function(btn) {
-    const uid=btn.getAttribute('data-uid');
-    const bid=btn.getAttribute('data-bid');
-    const mik=parseInt(btn.getAttribute('data-mik'))||0;
-    if (!confirm('₺'+mik.toLocaleString('tr-TR')+' kredi onaylanacak. Emin misin?')) return;
-    if (typeof window.krediOnayla==='function') {
-      await window.krediOnayla(uid,bid,mik,'Yönetici onayladı');
-    } else {
-      await db().ref('bank/'+uid+'/loan').transaction(c=>(c||0)+mik);
-      await db().ref('users/'+uid+'/money').transaction(c=>(c||0)+mik);
-      await db().ref('krediBasvurular/'+uid+'_'+bid).update({durum:'onaylandi',onaylayanNot:'Yönetici',onayTs:firebase.database.ServerValue.TIMESTAMP});
-    }
-    _toast('✅ ₺'+mik.toLocaleString()+' onaylandı → '+uid);
-    window.AP.openKrediOnayPanel();
-    _checkKrediOnayBadge();
-  };
-  window._aKReddet = async function(btn) {
-    const uid=btn.getAttribute('data-uid');
-    const bid=btn.getAttribute('data-bid');
-    const sebep=prompt('Red sebebi:')||'Yönetici reddetti';
-    if (typeof window.krediReddet==='function') {
-      await window.krediReddet(uid,bid,sebep);
-    } else {
-      await db().ref('krediBasvurular/'+uid+'_'+bid).update({durum:'reddedildi',redSebebi:sebep,redTs:firebase.database.ServerValue.TIMESTAMP});
-    }
-    _toast('Başvuru reddedildi');
-    window.AP.openKrediOnayPanel();
-    _checkKrediOnayBadge();
-  };
-
-  /* ─── Vergi & Faiz Paneli ─── */
-  async function openVergiPanel() {
-    _adminBody(_apSection('🏛️ Vergi &amp; Faiz Sistemi', '<div id="vergiContent"><div class="admin-loading">Yükleniyor...</div></div>'));
-    const mb = (await _get('system/merkezBankasi'))||{};
-    const logSnap = await db().ref('system/merkezBankasi/vergiLog').orderByKey().limitToLast(25).once('value');
-    const loglar = Object.values(logSnap.val()||{}).reverse();
-    const totalV = mb.totalVergi||0;
-    const totalF = mb.totalFaiz||0;
-
-    const el = document.getElementById('vergiContent');
-    if (!el) return;
-
-    // Banka faiz oranlarını DB'den çek (admin tarafından değiştirilebilir)
-    const dbFaizler = (await _get('system/bankFaizler'))||{};
-    const BANKALAR_DEFAULT = [
-      {id:'ziraat',name:'Ziraat Bankası',faiz:.025},{id:'vakif',name:'VakıfBank',faiz:.028},
-      {id:'halk',name:'Halkbank',faiz:.030},{id:'is',name:'İş Bankası',faiz:.032},
-      {id:'garanti',name:'Garanti BBVA',faiz:.035},{id:'akbank',name:'Akbank',faiz:.033},
-      {id:'ykb',name:'Yapı Kredi',faiz:.038},{id:'qnb',name:'QNB Finansbank',faiz:.036},
-      {id:'deniz',name:'Denizbank',faiz:.034},{id:'teb',name:'TEB',faiz:.031},
-    ];
-
-    let h = '<div style="display:grid;grid-template-columns:repeat(2,1fr) repeat(2,1fr);gap:12px;margin-bottom:24px">' +
-      _statCard('TOPLAM VERGİ','₺'+(totalV/1000).toFixed(1)+'B','#f59e0b') +
-      _statCard('TOPLAM FAİZ','₺'+(totalF/1000).toFixed(1)+'B','#22c55e') +
-      _statCard('TOPLAM GELİR','₺'+((totalV+totalF)/1000).toFixed(1)+'B','#3b82f6') +
-      _statCard('KAYIT SAYISI',''+loglar.length,'#a855f7') +
-    '</div>';
-
-    // Vergi oranları düzenleme
-    h += '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px;margin-bottom:16px">' +
-      '<h3 style="color:#f59e0b;margin:0 0 14px;font-size:15px">📋 Haftalık Vergi Tarifeleri</h3>' +
-      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">' +
-      [
-        {key:'shopTax',label:'🏪 Dükkan',def:500},
-        {key:'gardenTax',label:'🌱 Bahçe',def:300},
-        {key:'farmTax',label:'🐄 Çiftlik',def:300},
-        {key:'factoryTax',label:'🏭 Fabrika',def:800},
-        {key:'mineTax',label:'⛏️ Maden',def:600},
-      ].map(t=>'<div style="display:flex;align-items:center;justify-content:space-between;background:#060c18;border-radius:8px;padding:8px 10px">' +
-        '<span style="color:#94a3b8;font-size:12px">'+t.label+'</span>' +
-        '<div style="display:flex;align-items:center;gap:6px">' +
-          '<input type="number" id="vt_'+t.key+'" value="'+(mb['rates_'+t.key]||t.def)+'" min="0" style="width:70px;padding:4px 6px;border-radius:6px;border:1px solid #1a2f4a;background:#0d1a2e;color:#e2e8f0;font-size:12px;text-align:right">' +
-          '<span style="color:#475569;font-size:11px">₺</span>' +
-        '</div></div>'
-      ).join('') +
-      '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
-        '<span style="color:#94a3b8;font-size:12px;flex:1">💰 Gelir Vergisi Oranı (%)</span>' +
-        '<input type="number" id="vt_gelirOran" value="'+(mb.gelirOrani||8)+'" min="0" max="50" step="0.5" style="width:60px;padding:4px 6px;border-radius:6px;border:1px solid #1a2f4a;background:#0d1a2e;color:#e2e8f0;font-size:12px;text-align:right">' +
-        '<span style="color:#475569;font-size:11px">%</span>' +
-      '</div>' +
-      '<button class="admin-btn yellow" style="width:100%;margin-top:12px" onclick="window._saveVergiRates()">💾 Tarifeleri Kaydet</button>' +
-    '</div>';
-
-    // Banka faiz oranları
-    h += '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px;margin-bottom:16px">' +
-      '<h3 style="color:#22c55e;margin:0 0 14px;font-size:15px">💳 Banka Faiz Oranları (Yıllık %)</h3>' +
-      '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Banka</th><th>Mevcut Faiz</th><th>Haftalık (1000₺)</th><th>Yeni Oran %</th></tr></thead><tbody>' +
-      BANKALAR_DEFAULT.map(b=>{
-        const curFaiz = dbFaizler[b.id] || b.faiz;
-        return '<tr>' +
-          '<td><b>'+b.name+'</b></td>' +
-          '<td style="color:#22c55e">%'+(curFaiz*100).toFixed(2)+'</td>' +
-          '<td style="color:#f59e0b">₺'+(1000*curFaiz/52).toFixed(3)+'</td>' +
-          '<td><input type="number" id="bf_'+b.id+'" value="'+(curFaiz*100).toFixed(2)+'" min="0" max="100" step="0.1" style="width:70px;padding:4px 6px;border-radius:6px;border:1px solid #1a2f4a;background:#060c18;color:#e2e8f0;font-size:12px;text-align:right"></td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table></div>' +
-      '<button class="admin-btn green" style="width:100%;margin-top:12px" onclick="window._saveBankFaizler()">💾 Faiz Oranlarını Kaydet</button>' +
-    '</div>';
-
-    // Son vergi kayıtları
-    h += '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
-        '<h3 style="color:#e2e8f0;margin:0;font-size:15px">📋 Son Vergi Kayıtları</h3>' +
-        '<button class="admin-btn-sm" onclick="window.AP.openVergiPanel()">🔄</button>' +
-      '</div>';
-    if (!loglar.length) {
-      h += '<div style="text-align:center;color:#475569;padding:20px">Henüz kayıt yok</div>';
-    } else {
-      h += '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kullanıcı</th><th>Vergi</th><th>Faiz</th><th>Detay</th><th>Tarih</th></tr></thead><tbody>' +
-        loglar.map(l=>'<tr>' +
-          '<td><b>'+(l.username||l.uid||'-')+'</b></td>' +
-          '<td style="color:#f59e0b">₺'+(l.vergi||0).toLocaleString()+'</td>' +
-          '<td style="color:#22c55e">₺'+(l.faiz||0).toLocaleString()+'</td>' +
-          '<td style="font-size:10px;color:#475569">'+(l.detay?Object.entries(l.detay).filter(([,v])=>v>0).map(([k,v])=>k+':'+v).join(', '):'-')+'</td>' +
-          '<td style="color:#475569">'+(l.ts?new Date(l.ts).toLocaleDateString('tr-TR'):'-')+'</td>' +
-        '</tr>').join('') +
-        '</tbody></table></div>';
-    }
-    h += '</div>';
-    el.innerHTML = h;
-  }
-
-  window._saveVergiRates = async function() {
-    const upd = {};
-    ['shopTax','gardenTax','farmTax','factoryTax','mineTax'].forEach(k=>{
-      const v=parseInt(document.getElementById('vt_'+k)?.value)||0;
-      upd['system/merkezBankasi/rates_'+k]=v;
-    });
-    const gelir=parseFloat(document.getElementById('vt_gelirOran')?.value)||8;
-    upd['system/merkezBankasi/gelirOrani']=gelir;
-    await db().ref().update(upd);
-    _toast('💾 Vergi tarifeleri kaydedildi');
-    await _adminLog('save_vergi_rates',upd);
-  };
-  window._saveBankFaizler = async function() {
-    const upd={};
-    ['ziraat','vakif','halk','is','garanti','akbank','ykb','qnb','deniz','teb'].forEach(id=>{
-      const v=parseFloat(document.getElementById('bf_'+id)?.value)||0;
-      upd['system/bankFaizler/'+id]=v/100;
-    });
-    await db().ref().update(upd);
-    // window.BANKALAR_MAP'i güncelle
-    if (window.BANKALAR_MAP) {
-      Object.entries(upd).forEach(([path,v])=>{
-        const id=path.split('/').pop();
-        if(window.BANKALAR_MAP[id]) window.BANKALAR_MAP[id].faiz=v;
-      });
-    }
-    _toast('💾 Faiz oranları kaydedildi');
-    await _adminLog('save_faiz_rates',upd);
-  };
-
-  /* ─── Merkez Bankası Paneli ─── */
-  async function openMerkezBankasiPanel() {
-    _adminBody(_apSection('🏦 Karakaş Merkez Bankası', '<div id="mbContent"><div class="admin-loading">Yükleniyor...</div></div>'));
-    const authUid = await _get('system/authorityUid');
-    const authMoney = authUid?(await _get('users/'+authUid+'/money'))||0:0;
-    const mb=(await _get('system/merkezBankasi'))||{};
-    const logSnap=await db().ref('system/merkezBankasi/vergiLog').orderByKey().limitToLast(30).once('value');
-    const loglar=Object.values(logSnap.val()||{}).reverse();
-    const allUsers=(await _get('users'))||{};
-    // Borçlu kullanıcılar
-    const borrowers=[];
-    for(const [uid,u] of Object.entries(allUsers)){
-      const bank=(await _get('bank/'+uid))||{};
-      if((bank.loan||0)>0) borrowers.push({uid,username:u.username||uid,loan:bank.loan||0,krediNotu:u.krediNotu||100});
-    }
-    borrowers.sort((a,b)=>b.loan-a.loan);
-
-    const el=document.getElementById('mbContent');
-    if(!el) return;
-
-    let h='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">' +
-      '<div style="background:linear-gradient(135deg,#0d1a2e,#0d2240);border:1px solid #1e3a5f;border-radius:14px;padding:20px">' +
-        '<div style="color:#94a3b8;font-size:10px;letter-spacing:1.5px;margin-bottom:4px">HAZİNE BAKİYESİ</div>' +
-        '<div style="color:#22c55e;font-weight:900;font-size:32px">₺'+authMoney.toLocaleString('tr-TR',{minimumFractionDigits:2})+'</div>' +
-        '<div style="color:#334155;font-size:11px;margin-top:4px">Yetkili Hesabı</div>' +
-      '</div>' +
-      '<div style="background:linear-gradient(135deg,#0d1a2e,#1a0d2e);border:1px solid #2d1a5f;border-radius:14px;padding:20px">' +
-        '<div style="color:#94a3b8;font-size:10px;letter-spacing:1.5px;margin-bottom:4px">TOPLAM GELİR</div>' +
-        '<div style="color:#a855f7;font-weight:900;font-size:32px">₺'+((mb.totalVergi||0)+(mb.totalFaiz||0)).toLocaleString('tr-TR',{minimumFractionDigits:2})+'</div>' +
-        '<div style="color:#334155;font-size:11px;margin-top:4px">Vergi + Faiz Toplamı</div>' +
-      '</div>' +
-    '</div>';
-
-    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">' +
-      _statCard('TOPLAM VERGİ','₺'+(mb.totalVergi||0).toLocaleString(),'#f59e0b') +
-      _statCard('TOPLAM FAİZ','₺'+(mb.totalFaiz||0).toLocaleString(),'#22c55e') +
-      _statCard('TOPLAM BORÇ','₺'+borrowers.reduce((s,b)=>s+b.loan,0).toLocaleString(),'#ef4444',''+borrowers.length+' borçlu kullanıcı') +
-    '</div>';
-
-    // Para gönder / tahsil
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">' +
-      // Para gönder
-      '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:14px">' +
-        '<h4 style="color:#22c55e;margin:0 0 10px;font-size:13px">💸 Hazineden Para Gönder</h4>' +
-        '<input type="text" id="mbToUid" placeholder="Kullanıcı UID veya username" style="width:100%;box-sizing:border-box;padding:8px;border-radius:7px;border:1px solid #1a2f4a;background:#060c18;color:#e2e8f0;font-size:12px;margin-bottom:6px">' +
-        '<input type="number" id="mbAmount" placeholder="Miktar (₺)" style="width:100%;box-sizing:border-box;padding:8px;border-radius:7px;border:1px solid #1a2f4a;background:#060c18;color:#e2e8f0;font-size:12px;margin-bottom:8px">' +
-        '<button class="admin-btn green" style="width:100%" onclick="window._mbGonder()">💸 Gönder</button>' +
-      '</div>' +
-      // Manuel vergi tahsil
-      '<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:14px">' +
-        '<h4 style="color:#f59e0b;margin:0 0 10px;font-size:13px">🏛️ Manuel Vergi Tahsil</h4>' +
-        '<input type="text" id="mbTaxUid" placeholder="Kullanıcı UID veya username" style="width:100%;box-sizing:border-box;padding:8px;border-radius:7px;border:1px solid #1a2f4a;background:#060c18;color:#e2e8f0;font-size:12px;margin-bottom:6px">' +
-        '<div id="mbTaxPreview" style="color:#475569;font-size:11px;min-height:18px;margin-bottom:8px"></div>' +
-        '<div style="display:flex;gap:6px">' +
-          '<button class="admin-btn teal" style="flex:1" onclick="window._mbTaxPreview()">🔍 Hesapla</button>' +
-          '<button class="admin-btn yellow" style="flex:1" onclick="window._mbTaxCollect()">Tahsil Et</button>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-
-    // Borçlu kullanıcılar tablosu
-    h+='<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:14px;margin-bottom:14px">' +
-      '<h4 style="color:#ef4444;margin:0 0 12px;font-size:13px">💳 Borçlu Kullanıcılar ('+borrowers.length+')</h4>';
-    if(!borrowers.length){
-      h+='<div style="text-align:center;color:#475569;padding:16px">Borçlu kullanıcı yok</div>';
-    } else {
-      h+='<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kullanıcı</th><th>Borç</th><th>Kredi Notu</th><th>İşlem</th></tr></thead><tbody>' +
-        borrowers.map(b=>'<tr>' +
-          '<td><b>'+b.username+'</b></td>' +
-          '<td style="color:#ef4444;font-weight:700">₺'+b.loan.toLocaleString()+'</td>' +
-          '<td style="color:'+(b.krediNotu>=70?'#22c55e':b.krediNotu>=50?'#f59e0b':'#ef4444')+'">'+b.krediNotu+'/100</td>' +
-          '<td style="display:flex;gap:4px">' +
-            '<button class="admin-btn-xs green" onclick="window._mbBorcSil(\''+b.uid+'\')">Sil</button>' +
-            '<button class="admin-btn-xs yellow" onclick="window._mbBorcTahsil(\''+b.uid+'\','+b.loan+')">Tahsil</button>' +
-          '</td>' +
-        '</tr>').join('') +
-        '</tbody></table></div>';
-    }
-    h+='</div>';
-
-    // Son işlem logu
-    h+='<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:14px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
-        '<h4 style="color:#e2e8f0;margin:0;font-size:13px">📋 Son İşlem Kayıtları</h4>' +
-        '<button class="admin-btn-sm" onclick="window.AP.openMerkezBankasiPanel()">🔄</button>' +
-      '</div>';
-    if(!loglar.length){
-      h+='<div style="text-align:center;color:#475569;padding:16px">Kayıt yok</div>';
-    } else {
-      h+='<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kullanıcı</th><th>Vergi</th><th>Faiz</th><th>Toplam</th><th>Tarih</th></tr></thead><tbody>' +
-        loglar.map(l=>'<tr>' +
-          '<td><b>'+(l.username||l.uid||'-')+'</b></td>' +
-          '<td style="color:#f59e0b">₺'+(l.vergi||0).toLocaleString()+'</td>' +
-          '<td style="color:#22c55e">₺'+(l.faiz||0).toLocaleString()+'</td>' +
-          '<td style="color:#3b82f6;font-weight:700">₺'+((l.vergi||0)+(l.faiz||0)).toLocaleString()+'</td>' +
-          '<td style="color:#475569">'+(l.ts?new Date(l.ts).toLocaleDateString('tr-TR'):'-')+'</td>' +
-        '</tr>').join('') +
-        '</tbody></table></div>';
-    }
-    h+='</div>';
-    el.innerHTML=h;
-  }
-
-  window._mbGonder=async function(){
-    const inp=document.getElementById('mbToUid')?.value?.trim();
-    const mik=parseFloat(document.getElementById('mbAmount')?.value)||0;
-    if(!inp||mik<=0) return _toast('Alıcı ve miktar gir','warn');
-    let uid=inp;
-    const ud=await _get('users/'+inp);
-    if(!ud){const s=await db().ref('users').orderByChild('username').equalTo(inp).once('value');const f=s.val();if(f)uid=Object.keys(f)[0];else return _toast('Kullanıcı bulunamadı','error');}
-    const authUid=await _get('system/authorityUid');
-    if(!authUid) return _toast('Hazine UID bulunamadı','error');
-    const bal=(await _get('users/'+authUid+'/money'))||0;
-    if(bal<mik) return _toast('Hazine bakiyesi yetersiz!','error');
-    await db().ref('users/'+authUid+'/money').transaction(c=>(c||0)-mik);
-    await db().ref('users/'+uid+'/money').transaction(c=>(c||0)+mik);
-    _toast('✅ ₺'+mik.toLocaleString()+' → '+uid+' gönderildi');
-    await _adminLog('mb_gonder',{to:uid,amount:mik});
-    window.AP.openMerkezBankasiPanel();
-  };
-  window._mbTaxPreview=async function(){
-    const inp=document.getElementById('mbTaxUid')?.value?.trim();
-    const el=document.getElementById('mbTaxPreview');
-    if(!inp||!el) return;
-    let uid=inp;
-    const ud=await _get('users/'+inp);
-    if(!ud){const s=await db().ref('users').orderByChild('username').equalTo(inp).once('value');const f=s.val();if(f)uid=Object.keys(f)[0];else{el.textContent='Kullanıcı bulunamadı';return;}}
-    if(typeof window.getVergiDetay==='function'){
-      const v=await window.getVergiDetay(uid);
-      el.innerHTML='<span style="color:#f59e0b">Vergi: ₺'+v.totalVergi+'</span> + <span style="color:#22c55e">Faiz: ₺'+v.weeklyFaiz+'</span> = <b>₺'+(v.totalVergi+v.weeklyFaiz)+'</b>';
-      el.dataset.uid=uid;
-    }
-  };
-  window._mbTaxCollect=async function(){
-    const el=document.getElementById('mbTaxPreview');
-    const uid=el?.dataset?.uid;
-    if(!uid) return _toast('Önce Hesapla\'ya bas','warn');
-    const authUid=await _get('system/authorityUid');
-    if(typeof window.getVergiDetay==='function'){
-      const v=await window.getVergiDetay(uid);
-      const toplam=v.totalVergi+v.weeklyFaiz;
-      if(toplam<=0) return _toast('Tahsil edilecek şey yok','warn');
-      await db().ref('users/'+uid+'/money').transaction(c=>Math.max(0,(c||0)-toplam));
-      if(authUid) await db().ref('users/'+authUid+'/money').transaction(c=>(c||0)+toplam);
-      _toast('✅ ₺'+toplam.toLocaleString()+' tahsil edildi');
-      window.AP.openMerkezBankasiPanel();
-    }
-  };
-  window._mbBorcSil=async function(uid){
-    if(!confirm('Borç sıfırlanacak. Emin misin?')) return;
-    await _set('bank/'+uid+'/loan',0);
-    if(typeof window.updateKrediNotu==='function') await window.updateKrediNotu(uid,5,'Admin borç sildi');
-    _toast('✅ Borç silindi');
-    window.AP.openMerkezBankasiPanel();
-  };
-  window._mbBorcTahsil=async function(uid,borc){
-    if(!confirm('₺'+borc.toLocaleString()+' tahsil edilecek. Emin misin?')) return;
-    const ok=await db().ref('users/'+uid+'/money').transaction(c=>{if((c||0)<borc)return;return c-borc;});
-    const authUid=await _get('system/authorityUid');
-    if(ok.committed){
-      await _set('bank/'+uid+'/loan',0);
-      if(authUid) await db().ref('users/'+authUid+'/money').transaction(c=>(c||0)+borc);
-      _toast('✅ ₺'+borc.toLocaleString()+' tahsil edildi');
-    } else {
-      await _set('bank/'+uid+'/loan',0);
-      _toast('Bakiye yetersiz — borç silindi','warn');
-    }
-    window.AP.openMerkezBankasiPanel();
-  };
-
-  /* ─── Borsa Kontrol Paneli ─── */
-  async function openBorsaPanel() {
-    const bodyHtml = `
-      <div style="padding:24px;max-width:1200px">
-        <h2 style="color:#e2e8f0;margin:0 0 20px;font-size:20px;font-weight:800;padding-bottom:12px;border-bottom:1px solid #1a2f4a">📈 Borsa Kontrol Merkezi</h2>
-        <div class="admin-econ-section">
-          <div class="admin-action-row">
-            <label style="color:#e2e8f0">Tüm Hisselere % Değişim:</label>
-            <input type="number" id="stockGlobalPct" placeholder="Örn: 5 veya -3" class="admin-input-sm">
-            <button class="admin-btn green" onclick="window.AP.stockGlobalChange(1)">📈 Artır</button>
-            <button class="admin-btn red" onclick="window.AP.stockGlobalChange(-1)">📉 Düşür</button>
-          </div>
-          <div class="admin-action-row">
-            <button class="admin-btn yellow" onclick="window.AP.triggerDividend()">💰 Temettü Dağıt (Manuel)</button>
-            <button class="admin-btn teal" onclick="window.AP.openIPOManager()">🚀 IPO Yöneticisi</button>
-          </div>
-          <div id="stockPriceList" style="margin-top:16px"><div class="admin-loading">Hisseler yükleniyor...</div></div>
-        </div>
-      </div>`;
-    _adminBody(bodyHtml);
-    window.AP._loadStockPrices();
-  }
-
-  /* ─── Kripto Kontrol Paneli ─── */
-  async function openKriptoPanel() {
-    const bodyHtml = `
-      <div style="padding:24px;max-width:1200px">
-        <h2 style="color:#e2e8f0;margin:0 0 20px;font-size:20px;font-weight:800;padding-bottom:12px;border-bottom:1px solid #1a2f4a">₿ Kripto Kontrol Merkezi</h2>
-        <div class="admin-econ-section">
-          <div class="admin-action-row">
-            <label style="color:#e2e8f0">Tüm Coinlere % Değişim:</label>
-            <input type="number" id="cryptoGlobalPct" placeholder="Örn: 10 veya -5" class="admin-input-sm">
-            <button class="admin-btn green" onclick="window.AP.cryptoGlobalChange(1)">📈 Artır</button>
-            <button class="admin-btn red" onclick="window.AP.cryptoGlobalChange(-1)">📉 Düşür</button>
-          </div>
-          <div class="admin-action-row">
-            <button class="admin-btn red" onclick="window.AP.cryptoFreezeTrade(true)">🔒 Ticareti Durdur</button>
-            <button class="admin-btn green" onclick="window.AP.cryptoFreezeTrade(false)">🔓 Ticareti Aç</button>
-          </div>
-          <div id="cryptoPriceList" style="margin-top:16px"><div class="admin-loading">Kripto fiyatları yükleniyor...</div></div>
-        </div>
-      </div>`;
-    _adminBody(bodyHtml);
-    window.AP._loadCryptoPrices();
-  }
-
-  /* Admin giriş bildirimi */
-  async function _sendAdminLoginAnnouncement() {
-    try {
-      const snap = await _get('users');
-      const batch = {};
-      const msg = '👑 Yönetici sisteme giriş yaptı.';
-      Object.keys(snap || {}).forEach(uid => {
-        const key = db().ref().push().key;
-        batch['notifs/' + uid + '/' + key] = {
-          type: 'admin_login', icon: '👑', msg, ts: TS(), read: false
-        };
-      });
-      await db().ref().update(batch);
-    } catch(e) {}
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════════
-     INIT — Firebase auth dinleyicisi
-     ══════════════════════════════════════════════════════════════════════════ */
-  firebase.auth().onAuthStateChanged(async (user) => {
-    if (!user) return;
-    // SADECE founderTriggerBtn'i hazırla - GZ_FOUNDER_VERIFIED olmadan panel açılmaz
-    const isFounder = await _get('users/'+user.uid+'/isFounder').catch(()=>false);
-    const adminEmail = _isAdminEmail(user.email);
-    if (isFounder || adminEmail) {
-      setTimeout(activateFounderBtn, 800);
-    }
-  });
-
-  /* Public API */
-  window.AP = {
-    openAdminPanel, closeAdminPanel, navTo, openKrediOnayPanel, openVergiPanel, openMerkezBankasiPanel, openBorsaPanel, openKriptoPanel,
-    openKimlikOnayPanel, openBorcDavalarPanel, openTxLog, openEventsManager,
-    renderDashboard, openUserSearch, _searchUsers, _filterUsers,
-    openUserDetail, _renderUserResults, _liveSearchUsers, _toggleAllCheck,
-    userGrantMoney, userRemoveMoney, userGrantDiamond, userRemoveDiamond,
-    userGrantXP, userSetLevel, userBan, userUnban, userFreeze, userUnfreeze,
-    userResetAccount, userGrantVIP, userRevokeVIP, userGrantAdmin, userRevokeAdmin,
-    userGrantTitle, userRemoveTitle, userResetDebt, userResetCrypto, userResetStocks,
-    userSendMsg, userSendReward, userResetDailyBonus, userResetWheel,
-    userCompleteAllAch, userCompleteAllTech, userCompleteAllCourses,
-    openAllUsersModal, _quickBan, bulkBanSelected, bulkGiftAll, exportUsersCSV,
-    openGlobalEconModal, _econTab,
-    _loadCryptoPrices, setCryptoPrice, lockCryptoPrice, cryptoGlobalChange, cryptoFreezeTrade,
-    _loadStockPrices, setStockPrice, lockStock, stockGlobalChange,
-    triggerDividend, setBankInterest, setBankLoanMult, collectOverdueLoans, triggerInterestPayout,
-    _loadMarketListings, deleteListing, clearAllListings, setMarketMaxPrice, setMarketCommission,
-    setGlobalSetting, applyInflation, openIPOManager, approveIPO, rejectIPO,
-    setVergiOrani, setKrediDakikaFaiz, setMaxSatisBirim, clearVergiHazinesi,
-    openGameManagement, loadPvpData, cancelDuel, cancelAllDuels,
-    resetAllDailyTasks, resetAllMiniGameStats, giveWheelToAll,
-    openBotSuspectList, openWheelCustomizer, saveWheelWeights, openCardManager,
-    openExpeditionManager, completeExpedition, cancelExpedition,
-    openBroadcastModal, sendBroadcast, clearBroadcast, sendSegmentNotif, scheduleNotif,
-    openNewsManager, loadNews, createNews, previewNews, pinNews, hideNews, deleteNews,
-    toggleMaintModal, setMaintenance, scheduleMaintenance,
-    openChatManager, loadChatMessages, deleteChatMsg, muteUser, unmuteUser, muteChatUser,
-    sendAdminChatMsg, addFilterWord, loadFilterWords, removeFilterWord,
-    openBulkNotifModal, sendBulkNotif,
-    openSecurityLogs, _secTab, loadSecAttempts, loadReports, warnUser, closeReport,
-    loadSuspicious, loadAdminLog,
-    openSystemSettings, setSystemSetting, setElmasFiyati, toggleRegistration, toggleAnon,
-    startEvent, startDiscountEvent, stopAllEvents, openEventModal, createCustomEvent,
-    loadFirebaseStatus, openRawDataViewer, loadRawData, saveRawData, deleteRawData,
-    applyThemeColor, applySeasonTheme,
-    openAnalytics, _anaTab, loadEconomyAnalytics, loadPlayerAnalytics, loadTechAnalytics,
-    openUserSearch
-  };
-
-})();
-/* ==========================================================================
-   admin-panel-banned.js — Ban Yönetimi Eklentisi
-   ─────────────────────────────────────────────────────────────────────────
-   Mevcut admin-panel.js'e EKSTRA olarak yüklenir.
-   index.html'de admin-panel.js'den SONRA ekle:
-     <script src="admin-panel-banned.js"></script>
-
-   EKLENİLENLER:
-   1. Sidebar'a "🚫 Banlılar" butonu
-   2. Tam banlı kullanıcı listesi (UID, kullanıcı adı, sebep, tarih)
-   3. Tek tıkla ban kaldır
-   4. Geçici ban (otomatik kalkma)
-   5. Ban geçmişi görüntüleme
-   6. Toplu ban kaldır
-   7. Ban sebebi düzenle
-   8. Otomatik geçici ban kaldırma motoru
-   ========================================================================== */
-
-(function BanManager() {
-  'use strict';
-
-  const db  = () => firebase.database();
-  const TS  = () => firebase.database.ServerValue.TIMESTAMP;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     1. SIDEBAR'A BANLILAR BUTONU EKLE
-     ══════════════════════════════════════════════════════════════════════ */
-  function injectBanNavButton() {
-    const nav = document.querySelector('.admin-nav');
-    if (!nav) { setTimeout(injectBanNavButton, 800); return; }
-
-    // Zaten eklenmişse tekrar ekleme
-    if (document.getElementById('banNavBtn')) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'banNavBtn';
-    btn.className = 'admin-nav-btn';
-    btn.style.cssText = 'position:relative';
-    btn.innerHTML = '🚫 Banlılar <span id="banCountBadge" style="background:#dc2626;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;position:absolute;right:10px;top:50%;transform:translateY(-50%);display:none">0</span>';
-    btn.onclick = () => {
-      document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      openBanManager();
-    };
-
-    // "Güvenlik" butonunun öncesine ekle
-    const secBtn = [...nav.querySelectorAll('.admin-nav-btn')].find(b => b.textContent.includes('Güvenlik'));
-    if (secBtn) nav.insertBefore(btn, secBtn);
-    else nav.appendChild(btn);
-
-    // Banlı sayısını güncelle
-    updateBanCount();
-  }
-
-  async function updateBanCount() {
-    try {
-      const snap = await db().ref('users').orderByChild('banned').equalTo(true).once('value');
-      const count = snap.numChildren();
-      const badge = document.getElementById('banCountBadge');
-      if (badge) {
-        badge.textContent = count;
-        badge.style.display = count > 0 ? '' : 'none';
-      }
-    } catch(e) {}
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════
-     2. ANA BAN YÖNETİM SAYFASI
-     ══════════════════════════════════════════════════════════════════════ */
-  async function openBanManager() {
-    const panel = document.getElementById(window._adminTarget||'adminPanelBody');
-    if (!panel) return;
-    panel.innerHTML = '<div class="admin-loading">🚫 Banlılar yükleniyor...</div>';
-
-    try {
-      const snap = await db().ref('users').orderByChild('banned').equalTo(true).once('value');
-      const allSnap = await db().ref('users').once('value');
-      const allUsers = allSnap.val() || {};
-
-      const bannedEntries = [];
-      snap.forEach(child => {
-        bannedEntries.push({ uid: child.key, ...child.val() });
-      });
-
-      // Geçici banlar (süresi dolmuş → otomatik kaldır)
-      const now_ = Date.now();
-      const expired = bannedEntries.filter(u => u.tempBanUntil && u.tempBanUntil <= now_);
-      for (const u of expired) {
-        await unbanUser(u.uid, false);
-        bannedEntries.splice(bannedEntries.indexOf(u), 1);
-      }
-
-      // Tarihe göre sırala (en yeni önce)
-      bannedEntries.sort((a, b) => (b.bannedAt || 0) - (a.bannedAt || 0));
-
-      panel.innerHTML = `
-        <div class="admin-section">
-          <h2 class="admin-section-title">🚫 Ban Yönetimi</h2>
-
-          <!-- İstatistik şeridi -->
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-            ${statCard('🚫', 'Toplam Banlı', bannedEntries.length, '#dc2626')}
-            ${statCard('⏰', 'Geçici Ban', bannedEntries.filter(u=>u.tempBanUntil).length, '#f59e0b')}
-            ${statCard('♾️', 'Kalıcı Ban', bannedEntries.filter(u=>!u.tempBanUntil).length, '#7c3aed')}
-            ${statCard('✅', 'Bugün Kaldırılan', 0, '#16a34a')}
-          </div>
-
-          <!-- Araç çubuğu -->
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-            <input type="text" id="banSearch" placeholder="🔍 Kullanıcı adı veya UID ara..."
-              oninput="banFilterTable(this.value)"
-              style="flex:1;min-width:200px;background:#1e2d4a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px 14px;font-size:13px">
-            <select id="banTypeFilter" onchange="banFilterType(this.value)"
-              style="background:#1e2d4a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px 12px;font-size:13px">
-              <option value="all">Tüm Banlar</option>
-              <option value="temp">Geçici Banlar</option>
-              <option value="perm">Kalıcı Banlar</option>
-            </select>
-            <button onclick="bulkUnbanSelected()" style="${apBtnStyle('#16a34a')}">✅ Seçilenlerin Banını Kaldır</button>
-            <button onclick="openBanManualModal()" style="${apBtnStyle('#dc2626')}">+ Manuel Ban Ekle</button>
-            <button onclick="exportBanList()" style="${apBtnStyle('#0891b2')}">📥 CSV İndir</button>
-          </div>
-
-          <!-- Tablo -->
-          ${bannedEntries.length === 0
-            ? `<div style="text-align:center;padding:60px;color:#475569">
-                <div style="font-size:60px;margin-bottom:16px">✅</div>
-                <div style="font-size:18px;font-weight:700;color:#94a3b8">Banlı kullanıcı yok</div>
-                <div style="font-size:13px;margin-top:6px">Herkes serbest!</div>
-              </div>`
-            : `<div class="admin-table-wrap" id="banTableWrap">
-                <table class="admin-table" id="banTable">
-                  <thead>
-                    <tr>
-                      <th><input type="checkbox" id="chkBanAll" onchange="toggleAllBanChk()"></th>
-                      <th>Kullanıcı</th>
-                      <th>UID</th>
-                      <th>Ban Sebebi</th>
-                      <th>Banlayan</th>
-                      <th>Ban Tarihi</th>
-                      <th>Ban Bitiş</th>
-                      <th>Para</th>
-                      <th>Seviye</th>
-                      <th>İşlemler</th>
-                    </tr>
-                  </thead>
-                  <tbody id="banTbody">
-                    ${bannedEntries.map(u => renderBanRow(u)).join('')}
-                  </tbody>
-                </table>
-              </div>`
-          }
-
-          <!-- Geçici Ban Oluştur -->
-          <div class="admin-card" style="margin-top:20px">
-            <h3>⏰ Geçici Ban Sistemi</h3>
-            <p style="color:#94a3b8;font-size:13px;margin-bottom:12px">
-              Geçici banlı kullanıcılar, süre dolunca otomatik olarak serbest bırakılır.
-            </p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input type="text" id="tempBanUID" placeholder="Kullanıcı UID"
-                style="flex:1;min-width:200px;background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px">
-              <input type="text" id="tempBanReason" placeholder="Ban sebebi"
-                style="flex:1;min-width:200px;background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px">
-              <select id="tempBanDur"
-                style="background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px">
-                <option value="3600000">1 Saat</option>
-                <option value="21600000">6 Saat</option>
-                <option value="86400000">1 Gün</option>
-                <option value="259200000">3 Gün</option>
-                <option value="604800000">1 Hafta</option>
-                <option value="2592000000">30 Gün</option>
-              </select>
-              <button onclick="applyTempBan()" style="${apBtnStyle('#f59e0b')}">⏰ Geçici Ban Uygula</button>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Mevduat Faizi</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mb_dep','0.05-1.50','number',depositRate.toString())}${btn('Güncelle','window.AP._setBankRate(\"depositRate\",\"mb_dep\")','#22c55e')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Kredi Faizi</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mb_loan','0.15-2.00','number',loanRate.toString())}${btn('Güncelle','window.AP._setBankRate(\"loanRate\",\"mb_loan\")','#ef4444')}</div>
+              </div>
             </div>
           </div>
-
-          <!-- Ban Geçmişi -->
-          <div class="admin-card" style="margin-top:16px">
-            <h3 style="display:flex;align-items:center;justify-content:space-between">
-              📜 Son 20 Ban İşlemi
-              <button onclick="loadBanHistory()" style="${apBtnStyle('#475569',true)}">🔄 Yükle</button>
-            </h3>
-            <div id="banHistorySection" style="color:#475569;font-size:13px">Yüklemek için butona bas.</div>
-          </div>
-        </div>
-      `;
-
-      // Global fonksiyonlar
-      window.banFilterTable = banFilterTable;
-      window.banFilterType  = banFilterType;
-      window.bulkUnbanSelected = bulkUnbanSelected;
-      window.openBanManualModal = openBanManualModal;
-      window.exportBanList = exportBanList;
-      window.toggleAllBanChk = toggleAllBanChk;
-      window.applyTempBan = applyTempBan;
-      window.loadBanHistory = loadBanHistory;
-      window.quickUnban = quickUnban;
-      window.openBanDetailModal = openBanDetailModal;
-      window.editBanReason = editBanReason;
-
-    } catch(e) {
-      panel.innerHTML = `<div class="admin-section"><div style="color:#dc2626;padding:20px">Hata: ${e.message}</div></div>`;
-      console.error('[BanManager]', e);
-    }
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════
-     3. BAN SATIRI RENDER
-     ══════════════════════════════════════════════════════════════════════ */
-  function renderBanRow(u) {
-    const banDate   = u.bannedAt ? new Date(u.bannedAt).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '?';
-    const isTemp    = !!u.tempBanUntil;
-    const remaining = isTemp ? Math.max(0, u.tempBanUntil - Date.now()) : null;
-    const remStr    = isTemp && remaining > 0 ? formatDuration(remaining) : isTemp ? 'Süresi Dolmuş' : '♾️ Kalıcı';
-    const maskedUID = u.uid.slice(0, 8) + '...' + u.uid.slice(-4);
-
-    return `
-      <tr data-uid="${u.uid}" data-name="${(u.username || '').toLowerCase()}" data-type="${isTemp ? 'temp' : 'perm'}">
-        <td><input type="checkbox" class="ban-chk" data-uid="${u.uid}"></td>
-        <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:32px;height:32px;border-radius:50%;background:${isTemp?'#7c2d12':'#450a0a'};display:flex;align-items:center;justify-content:center;font-size:14px">
-              ${u.isAnonymous ? '🛡️' : '👤'}
-            </div>
-            <div>
-              <div style="font-weight:700;color:#e5e7eb">${escHtml(u.username || 'İsimsiz')}</div>
-              <div style="font-size:10px;color:#64748b">${u.email ? maskEmail(u.email) : 'E-posta yok'}</div>
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">⚡ Hızlı Faiz Senaryoları</h3>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              ${btn('🕊️ Faiz İndir (TCMB tarzı)', 'window.AP._rateScenario("easy")', '#16a34a')}
+              ${btn('🦅 Faiz Artır (Sıkılaştırma)', 'window.AP._rateScenario("tight")', '#ef4444')}
+              ${btn('⚖️ Nötr Politika', 'window.AP._rateScenario("neutral")', '#475569')}
+              ${btn('💥 Kriz Modu (Acil Müdahale)', 'window.AP._rateScenario("crisis")', '#7c3aed')}
             </div>
           </div>
-        </td>
-        <td>
-          <div style="font-family:monospace;font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:4px">
-            ${maskedUID}
-            <button onclick="navigator.clipboard.writeText('${u.uid}').then(()=>apToast('📋 UID kopyalandı','success'))"
-              style="background:transparent;border:none;cursor:pointer;color:#475569;font-size:14px">📋</button>
-          </div>
-        </td>
-        <td>
-          <div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fbbf24;font-size:12px"
-            title="${escHtml(u.banReason || '—')}">
-            ${escHtml(u.banReason || '—')}
-          </div>
-        </td>
-        <td style="color:#64748b;font-size:11px">${u.bannedBy ? u.bannedBy.slice(0,8) + '...' : 'Sistem'}</td>
-        <td style="color:#94a3b8;font-size:12px;white-space:nowrap">${banDate}</td>
-        <td>
-          <span style="
-            background:${isTemp ? 'rgba(245,158,11,0.15)' : 'rgba(220,38,38,0.15)'};
-            border:1px solid ${isTemp ? '#f59e0b' : '#dc2626'};
-            color:${isTemp ? '#fbbf24' : '#f87171'};
-            border-radius:8px;padding:3px 10px;font-size:11px;white-space:nowrap;font-weight:600
-          ">${remStr}</span>
-        </td>
-        <td style="color:#16a34a;font-size:12px;font-weight:700">${fmtMoney(u.money || 0)}</td>
-        <td style="color:#94a3b8;font-size:12px">Lv ${u.level || 1}</td>
-        <td>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">
-            <button onclick="openBanDetailModal('${u.uid}')"
-              style="${apBtnStyle('#3b82f6', true)}">Detay</button>
-            <button onclick="quickUnban('${u.uid}','${escHtml(u.username || 'Kullanıcı')}')"
-              style="${apBtnStyle('#16a34a', true)}">✅ Ban Kaldır</button>
-            <button onclick="editBanReason('${u.uid}','${escHtml(u.banReason || '')}')"
-              style="${apBtnStyle('#f59e0b', true)}">✏️</button>
-          </div>
-        </td>
-      </tr>
-    `;
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
   }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     4. BAN DETAY MODAL — Kullanıcının tüm bilgileri + işlemler
-     ══════════════════════════════════════════════════════════════════════ */
-  async function openBanDetailModal(uid) {
-    const u = await db().ref('users/' + uid).once('value').then(s => s.val());
-    if (!u) return apToast('Kullanıcı bulunamadı', 'error');
+  /* ──────────────────────────────────────────────────────────────────────
+     BORSA KONTROL
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderBorsa() {
+    loading('Borsa yükleniyor...');
+    try {
+      const prices = await dbGet('borsaFiyatlar') || {};
 
-    const bankData = await db().ref('bank/' + uid).once('value').then(s => s.val() || {});
-    const banLogs  = await db().ref('security/banLogs/' + uid).once('value').then(s => {
-      const v = s.val(); return v ? Object.values(v).sort((a,b) => (b.ts||0)-(a.ts||0)).slice(0, 10) : [];
-    });
-    const businesses = await db().ref('businesses/' + uid).once('value').then(s => s.val() || {});
+      const hisseler = ['GZGM', 'GZTK', 'GZBT', 'GZAN', 'GZIM', 'GZTA', 'GZET', 'GZFN'];
+      const defaultPrices = { GZGM:120, GZTK:85, GZBT:340, GZAN:67, GZIM:210, GZTA:155, GZET:98, GZFN:280 };
 
-    const shopCount    = Object.keys(businesses.shops || {}).length;
-    const gardenCount  = Object.keys(businesses.gardens || {}).length;
-    const factoryCount = Object.keys(businesses.factories || {}).length;
-    const mineCount    = Object.keys(businesses.mines || {}).length;
-    const farmCount    = Object.keys(businesses.farms || {}).length;
-
-    const isTemp = !!u.tempBanUntil;
-    const remaining = isTemp ? Math.max(0, u.tempBanUntil - Date.now()) : null;
-
-    const html = `
-      <div style="max-width:600px">
-        <!-- Profil başlık -->
-        <div style="text-align:center;padding:8px 0 20px">
-          <div style="font-size:52px">${u.isAnonymous ? '🛡️' : '👤'}</div>
-          <div style="font-size:20px;font-weight:900;color:#e5e7eb">${escHtml(u.username || 'İsimsiz')}</div>
-          <div style="font-size:12px;color:#64748b;margin-top:4px">${u.email ? maskEmail(u.email) : 'Anonim hesap'}</div>
-          <div style="margin-top:8px">
-            <span style="
-              background:rgba(220,38,38,0.15);border:1px solid #dc2626;
-              color:#f87171;border-radius:8px;padding:4px 16px;font-weight:700;font-size:13px
-            ">🚫 BANLANDI</span>
+      body().innerHTML = section('📈 Borsa Kontrol Paneli', `
+        <div style="background:#0e1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="color:#e2e8f0;margin:0 0 16px;font-size:15px;font-weight:700">⚡ Hızlı Borsa Eylemleri</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+            ${btn('📈 Tümünü %10 Artır', 'window.AP._borsaAdj(0.10)', '#16a34a')}
+            ${btn('📉 Tümünü %10 Düşür', 'window.AP._borsaAdj(-0.10)', '#ef4444')}
+            ${btn('📈 Tümünü %25 Artır', 'window.AP._borsaAdj(0.25)', '#16a34a')}
+            ${btn('📉 Tümünü %25 Düşür', 'window.AP._borsaAdj(-0.25)', '#ef4444')}
+            ${btn('🎲 Rastgele Dalgalan', 'window.AP._borsaRandom()', '#7c3aed')}
+            ${btn('🔄 Otomatik Mod Aç', 'window.AP._borsaAutoToggle(true)', '#0891b2')}
+            ${btn('⏸ Otomatik Durdur', 'window.AP._borsaAutoToggle(false)', '#475569')}
           </div>
         </div>
 
-        <!-- Ban detayları -->
-        <div style="background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.3);border-radius:12px;padding:14px;margin-bottom:14px">
-          <div style="font-weight:700;color:#f87171;margin-bottom:10px">🚫 Ban Bilgileri</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            ${apDetailRow('Ban Türü', isTemp ? '⏰ Geçici' : '♾️ Kalıcı')}
-            ${apDetailRow('Ban Sebebi', escHtml(u.banReason || '—'))}
-            ${apDetailRow('Ban Tarihi', u.bannedAt ? new Date(u.bannedAt).toLocaleString('tr-TR') : '?')}
-            ${apDetailRow('Banlayan', u.bannedBy ? u.bannedBy.slice(0,8)+'...' : 'Sistem')}
-            ${isTemp ? apDetailRow('Bitiş Tarihi', new Date(u.tempBanUntil).toLocaleString('tr-TR')) : ''}
-            ${isTemp && remaining > 0 ? apDetailRow('Kalan Süre', formatDuration(remaining)) : ''}
-          </div>
-        </div>
-
-        <!-- Hesap istatistikleri -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-          ${apStatBox('Seviye', 'Lv ' + (u.level||1))}
-          ${apStatBox('Para', fmtMoney(u.money||0))}
-          ${apStatBox('Elmas', (u.diamonds||0) + ' 💎')}
-          ${apStatBox('Banka', fmtMoney(bankData.balance||0))}
-          ${apStatBox('Yatırım', fmtMoney(bankData.investment||0))}
-          ${apStatBox('Borç', fmtMoney(bankData.loan||0))}
-        </div>
-
-        <!-- İşletmeler -->
-        <div style="background:#1e2d4a;border:1px solid #1e3a8a;border-radius:12px;padding:12px;margin-bottom:14px">
-          <div style="color:#fbbf24;font-weight:700;margin-bottom:8px">🏢 İşletme Özeti</div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            ${bizMini('🏪', 'Dükkan', shopCount)}
-            ${bizMini('🌱', 'Bahçe', gardenCount)}
-            ${bizMini('🐄', 'Çiftlik', farmCount)}
-            ${bizMini('🏭', 'Fabrika', factoryCount)}
-            ${bizMini('⛏️', 'Maden', mineCount)}
-          </div>
-        </div>
-
-        <!-- Ban Geçmişi -->
-        <div style="background:#1e2d4a;border:1px solid #1e3a8a;border-radius:12px;padding:12px;margin-bottom:16px">
-          <div style="color:#fbbf24;font-weight:700;margin-bottom:8px">📜 Ban Geçmişi (Son 10)</div>
-          ${banLogs.length === 0
-            ? '<div style="color:#475569;font-size:12px">Bu kullanıcının ban geçmişi yok</div>'
-            : banLogs.map(log => `
-              <div style="padding:5px 0;border-bottom:1px solid #1e3a8a;display:flex;justify-content:space-between;font-size:11px">
-                <span style="color:${log.action==='ban'?'#f87171':'#4ade80'}">${log.action==='ban'?'🚫 Banlandı':'✅ Ban Kaldırıldı'}</span>
-                <span style="color:#94a3b8">${escHtml(log.reason || '—')}</span>
-                <span style="color:#475569">${new Date(log.ts||0).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+          ${hisseler.map(s => {
+            const p = prices[s] || defaultPrices[s] || 100;
+            return `<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <span style="font-weight:700;color:#e2e8f0;font-size:15px">${s}</span>
+                <span style="font-size:18px;font-weight:900;color:#f59e0b">${fmt(p)}</span>
               </div>
-            `).join('')
-          }
-        </div>
-
-        <!-- Aksiyon Butonları -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button onclick="quickUnban('${uid}','${escHtml(u.username||'Kullanıcı')}');closeAdminModal()"
-            style="${apBtnStyle('#16a34a')}">✅ Ban Kaldır</button>
-          <button onclick="editBanReason('${uid}','${escHtml(u.banReason||'')}')"
-            style="${apBtnStyle('#f59e0b')}">✏️ Sebebi Düzenle</button>
-          <button onclick="convertTempBan('${uid}')"
-            style="${apBtnStyle('#7c3aed')}">⏰ Geçici Bana Çevir</button>
-          <button onclick="navigator.clipboard.writeText('${uid}').then(()=>apToast('📋 UID kopyalandı','success'))"
-            style="${apBtnStyle('#475569')}">📋 UID Kopyala</button>
-        </div>
-      </div>
-    `;
-
-    // Mevcut modal sistemini kullan veya kendi modalımızı aç
-    if (typeof window.showModal === 'function') {
-      window.showModal('🚫 Ban Detayı', html, true);
-    } else {
-      showApModal('🚫 Ban Detayı', html);
-    }
-
-    window.convertTempBan = convertTempBan;
-    window.closeAdminModal = closeApModal;
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════
-     5. BAN KALDIR
-     ══════════════════════════════════════════════════════════════════════ */
-  async function unbanUser(uid, notify = true) {
-    const updates = {
-      banned: false,
-      banReason: null,
-      bannedAt: null,
-      bannedBy: null,
-      tempBanUntil: null
-    };
-    await db().ref('users/' + uid).update(updates);
-
-    // Ban log'a ekle
-    await db().ref('security/banLogs/' + uid).push({
-      action: 'unban',
-      by: firebase.auth().currentUser?.uid || 'system',
-      ts: firebase.database.ServerValue.TIMESTAMP
-    });
-
-    // Admin log
-    try {
-      await db().ref('adminLogs').push({
-        ts: firebase.database.ServerValue.TIMESTAMP,
-        adminUid: firebase.auth().currentUser?.uid || 'system',
-        action: 'unban',
-        details: JSON.stringify({ uid })
-      });
-    } catch(e) {}
-
-    // Kullanıcıya bildirim gönder
-    if (notify) {
-      await db().ref('notifs/' + uid).push({
-        type: 'unban',
-        icon: '✅',
-        msg: '✅ Hesabınızın banı kaldırıldı. Tekrar oynayabilirsiniz!',
-        ts: firebase.database.ServerValue.TIMESTAMP,
-        read: false
-      });
-    }
-  }
-
-  async function quickUnban(uid, username) {
-    if (!confirm(`"${username}" (${uid.slice(0,8)}...) kullanıcısının banı kaldırılsın mı?`)) return;
-    try {
-      await unbanUser(uid, true);
-      apToast(`✅ ${username} kullanıcısının banı kaldırıldı`, 'success');
-      // Satırı tablodan kaldır
-      const row = document.querySelector(`#banTbody tr[data-uid="${uid}"]`);
-      if (row) row.style.animation = 'fadeOut 0.3s forwards';
-      setTimeout(() => { if (row) row.remove(); updateBanCount(); }, 300);
-      // Ban badge güncelle
-      updateBanCount();
-    } catch(e) {
-      apToast('Ban kaldırılırken hata: ' + e.message, 'error');
-    }
-  }
-  window.quickUnban = quickUnban;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     6. TOPLU BAN KALDIRMA
-     ══════════════════════════════════════════════════════════════════════ */
-  async function bulkUnbanSelected() {
-    const checked = [...document.querySelectorAll('.ban-chk:checked')].map(c => c.dataset.uid);
-    if (checked.length === 0) return apToast('Kullanıcı seçilmedi', 'error');
-    if (!confirm(`${checked.length} kullanıcının banı kaldırılsın mı?`)) return;
-
-    let count = 0;
-    for (const uid of checked) {
-      await unbanUser(uid, true);
-      count++;
-      const row = document.querySelector(`#banTbody tr[data-uid="${uid}"]`);
-      if (row) row.remove();
-    }
-    apToast(`✅ ${count} kullanıcının banı kaldırıldı`, 'success');
-    updateBanCount();
-  }
-
-  /* ══════════════════════════════════════════════════════════════════════
-     7. GEÇİCİ BAN
-     ══════════════════════════════════════════════════════════════════════ */
-  async function applyTempBan() {
-    const uid    = document.getElementById('tempBanUID')?.value?.trim();
-    const reason = document.getElementById('tempBanReason')?.value?.trim() || 'Geçici kısıtlama';
-    const dur    = parseInt(document.getElementById('tempBanDur')?.value) || 86400000;
-
-    if (!uid) return apToast('UID gir', 'error');
-
-    const userSnap = await db().ref('users/' + uid).once('value');
-    if (!userSnap.exists()) return apToast('Kullanıcı bulunamadı', 'error');
-
-    const until = Date.now() + dur;
-    await db().ref('users/' + uid).update({
-      banned: true,
-      banReason: reason,
-      bannedAt: firebase.database.ServerValue.TIMESTAMP,
-      bannedBy: firebase.auth().currentUser?.uid || 'admin',
-      tempBanUntil: until
-    });
-
-    // Ban log
-    await db().ref('security/banLogs/' + uid).push({
-      action: 'ban',
-      reason,
-      by: firebase.auth().currentUser?.uid || 'admin',
-      tempUntil: until,
-      ts: firebase.database.ServerValue.TIMESTAMP
-    });
-
-    // Bildirim
-    await db().ref('notifs/' + uid).push({
-      type: 'ban',
-      icon: '🚫',
-      msg: `🚫 Hesabınız geçici olarak kısıtlandı. Sebep: ${reason}. Bitiş: ${new Date(until).toLocaleString('tr-TR')}`,
-      ts: firebase.database.ServerValue.TIMESTAMP,
-      read: false
-    });
-
-    apToast(`⏰ Geçici ban uygulandı (${formatDuration(dur)})`, 'success');
-    openBanManager(); // Sayfayı yenile
-  }
-
-  /* Kalıcı → Geçici bana çevir */
-  async function convertTempBan(uid) {
-    const durs = {
-      '1 Saat': 3600000, '6 Saat': 21600000,
-      '1 Gün': 86400000, '3 Gün': 259200000,
-      '1 Hafta': 604800000, '30 Gün': 2592000000
-    };
-    const choice = prompt('Geçici ban süresi seçin:\n' + Object.keys(durs).join('\n'));
-    const dur = durs[choice];
-    if (!dur) return apToast('Geçersiz seçim', 'error');
-    const until = Date.now() + dur;
-    await db().ref('users/' + uid).update({ tempBanUntil: until });
-    apToast(`⏰ Ban ${choice} geçici bana çevrildi`, 'success');
-  }
-  window.convertTempBan = convertTempBan;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     8. BAN SEBEBİ DÜZENLE
-     ══════════════════════════════════════════════════════════════════════ */
-  async function editBanReason(uid, currentReason) {
-    const newReason = prompt('Yeni ban sebebi:', currentReason || '');
-    if (newReason === null) return; // İptal
-    if (!newReason.trim()) return apToast('Sebep boş olamaz', 'error');
-    await db().ref('users/' + uid + '/banReason').set(newReason.trim());
-    apToast('✏️ Ban sebebi güncellendi', 'success');
-    // Satırdaki sebebi güncelle
-    const row = document.querySelector(`#banTbody tr[data-uid="${uid}"]`);
-    if (row) {
-      const reasonCell = row.cells[3];
-      if (reasonCell) reasonCell.querySelector('div').textContent = newReason;
-    }
-  }
-  window.editBanReason = editBanReason;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     9. MANUEL BAN EKLEME MODAL
-     ══════════════════════════════════════════════════════════════════════ */
-  function openBanManualModal() {
-    const html = `
-      <div>
-        <div style="color:#94a3b8;font-size:13px;margin-bottom:14px">
-          UID'yi gir ve ban uygula. Kullanıcı arama için Kullanıcılar sekmesini kullan.
-        </div>
-        <div style="margin-bottom:10px">
-          <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:4px">Kullanıcı UID</label>
-          <input type="text" id="manBanUID" placeholder="Firebase UID gir..."
-            style="width:100%;background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px;font-family:monospace">
-        </div>
-        <div style="margin-bottom:10px">
-          <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:4px">Ban Sebebi</label>
-          <input type="text" id="manBanReason" placeholder="Hile, hakaret, spam vb."
-            style="width:100%;background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px">
-        </div>
-        <div style="margin-bottom:16px">
-          <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:4px">Ban Türü</label>
-          <select id="manBanType" style="width:100%;background:#0f172a;border:1px solid #2d3748;color:#e5e7eb;border-radius:8px;padding:10px">
-            <option value="perm">♾️ Kalıcı Ban</option>
-            <option value="1h">⏰ 1 Saat</option>
-            <option value="6h">⏰ 6 Saat</option>
-            <option value="1d">⏰ 1 Gün</option>
-            <option value="3d">⏰ 3 Gün</option>
-            <option value="7d">⏰ 1 Hafta</option>
-            <option value="30d">⏰ 30 Gün</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button onclick="confirmManualBan()" style="${apBtnStyle('#dc2626')};flex:1">🚫 Ban Uygula</button>
-          <button onclick="closeAdminModal()" style="${apBtnStyle('#475569')};flex:1">İptal</button>
-        </div>
-      </div>
-    `;
-
-    showApModal('🚫 Manuel Ban Ekle', html);
-
-    window.confirmManualBan = async function () {
-      const uid    = document.getElementById('manBanUID')?.value?.trim();
-      const reason = document.getElementById('manBanReason')?.value?.trim() || 'Admin kararı';
-      const type   = document.getElementById('manBanType')?.value;
-
-      if (!uid) return apToast('UID gir', 'error');
-
-      const userSnap = await db().ref('users/' + uid).once('value');
-      if (!userSnap.exists()) return apToast('Bu UID ile kullanıcı bulunamadı', 'error');
-
-      const durMap = { '1h': 3600000, '6h': 21600000, '1d': 86400000, '3d': 259200000, '7d': 604800000, '30d': 2592000000 };
-      const dur = durMap[type] || null;
-      const until = dur ? Date.now() + dur : null;
-
-      await db().ref('users/' + uid).update({
-        banned: true,
-        banReason: reason,
-        bannedAt: firebase.database.ServerValue.TIMESTAMP,
-        bannedBy: firebase.auth().currentUser?.uid || 'admin',
-        tempBanUntil: until
-      });
-
-      await db().ref('security/banLogs/' + uid).push({
-        action: 'ban', reason, by: firebase.auth().currentUser?.uid || 'admin',
-        tempUntil: until, ts: firebase.database.ServerValue.TIMESTAMP
-      });
-
-      await db().ref('notifs/' + uid).push({
-        type: 'ban', icon: '🚫',
-        msg: `🚫 Hesabınız kısıtlandı. Sebep: ${reason}${until ? '. Bitiş: ' + new Date(until).toLocaleString('tr-TR') : ''}`,
-        ts: firebase.database.ServerValue.TIMESTAMP, read: false
-      });
-
-      closeApModal();
-      apToast(`🚫 Ban uygulandı (${type === 'perm' ? 'Kalıcı' : formatDuration(durMap[type])})`, 'success');
-      openBanManager();
-      updateBanCount();
-    };
-  }
-  window.openBanManualModal = openBanManualModal;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     10. BAN GEÇMİŞİ
-     ══════════════════════════════════════════════════════════════════════ */
-  async function loadBanHistory() {
-    const div = document.getElementById('banHistorySection');
-    if (!div) return;
-    div.innerHTML = '<div style="color:#64748b;font-size:12px">Yükleniyor...</div>';
-
-    try {
-      const adminLogs = await db().ref('adminLogs')
-        .orderByChild('action').equalTo('ban')
-        .limitToLast(20)
-        .once('value');
-      const unbanLogs = await db().ref('adminLogs')
-        .orderByChild('action').equalTo('unban')
-        .limitToLast(20)
-        .once('value');
-
-      const banArr   = adminLogs.val() ? Object.values(adminLogs.val()) : [];
-      const unbanArr = unbanLogs.val() ? Object.values(unbanLogs.val()) : [];
-      const combined = [...banArr, ...unbanArr].sort((a,b) => (b.ts||0) - (a.ts||0)).slice(0, 20);
-
-      if (combined.length === 0) {
-        div.innerHTML = '<div style="color:#475569;font-size:12px">Ban geçmişi boş</div>';
-        return;
-      }
-
-      div.innerHTML = `
-        <div style="max-height:300px;overflow-y:auto">
-          ${combined.map(log => {
-            const details = (() => { try { return JSON.parse(log.details || '{}'); } catch(e) { return {}; } })();
-            const isBan   = log.action === 'ban';
-            return `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e3a8a">
-                <div>
-                  <div style="display:flex;align-items:center;gap:6px">
-                    <span style="font-size:14px">${isBan ? '🚫' : '✅'}</span>
-                    <span style="color:${isBan?'#f87171':'#4ade80'};font-weight:600;font-size:13px">
-                      ${isBan ? 'Ban Uygulandı' : 'Ban Kaldırıldı'}
-                    </span>
-                  </div>
-                  <div style="color:#64748b;font-size:11px;margin-top:2px">
-                    UID: ${(details.uid || '?').slice(0,16)}...
-                    ${details.reason ? ' · ' + details.reason : ''}
-                  </div>
-                </div>
-                <div style="color:#475569;font-size:11px;text-align:right">
-                  ${new Date(log.ts||0).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
-                </div>
+              <div style="display:flex;gap:6px;margin-bottom:8px">
+                ${btn('-20%', `window.AP._borsaHisse('${s}',-0.20)`, '#ef4444', 'font-size:11px;padding:4px 8px;flex:1')}
+                ${btn('-10%', `window.AP._borsaHisse('${s}',-0.10)`, '#ef444466', 'font-size:11px;padding:4px 8px;flex:1')}
+                ${btn('+10%', `window.AP._borsaHisse('${s}',0.10)`, '#16a34a66', 'font-size:11px;padding:4px 8px;flex:1')}
+                ${btn('+20%', `window.AP._borsaHisse('${s}',0.20)`, '#16a34a', 'font-size:11px;padding:4px 8px;flex:1')}
               </div>
-            `;
+              <div style="display:flex;gap:6px">
+                <input id="bp_${s}" type="number" placeholder="Manuel fiyat" value="${p}" 
+                  style="flex:1;padding:6px;background:#080d1a;border:1px solid #1a2f4a;border-radius:6px;color:#e2e8f0;font-size:12px">
+                ${btn('Set', `window.AP._borsaSetPrice('${s}')`, '#3b82f6', 'font-size:11px;padding:6px 10px')}
+              </div>
+            </div>`;
           }).join('')}
         </div>
-      `;
-    } catch(e) {
-      div.innerHTML = `<div style="color:#dc2626;font-size:12px">Hata: ${e.message}</div>`;
-    }
-  }
-  window.loadBanHistory = loadBanHistory;
-
-  /* ══════════════════════════════════════════════════════════════════════
-     11. ARAMA & FİLTRE
-     ══════════════════════════════════════════════════════════════════════ */
-  function banFilterTable(q) {
-    q = q.toLowerCase();
-    document.querySelectorAll('#banTbody tr').forEach(row => {
-      const name = row.dataset.name || '';
-      const uid  = row.dataset.uid  || '';
-      row.style.display = (!q || name.includes(q) || uid.includes(q)) ? '' : 'none';
-    });
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
   }
 
-  function banFilterType(type) {
-    document.querySelectorAll('#banTbody tr').forEach(row => {
-      if (type === 'all') { row.style.display = ''; return; }
-      row.style.display = row.dataset.type === type ? '' : 'none';
-    });
+  /* ──────────────────────────────────────────────────────────────────────
+     KRİPTO KONTROL
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderKripto() {
+    loading('Kripto yükleniyor...');
+    try {
+      const kriptoPrices = await dbGet('kriptoPrices') || {};
+      const coins = ['BTC','ETH','BNB','SOL','ADA','XRP','DOGE','GZC'];
+      const defaults = { BTC:2800000, ETH:175000, BNB:24000, SOL:7000, ADA:45, XRP:28, DOGE:12, GZC:150 };
+
+      body().innerHTML = section('₿ Kripto Kontrol Paneli', `
+        <div style="background:#0e1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">⚡ Toplu Kripto Eylemleri</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${btn('🚀 Bull Run (+%30)', 'window.AP._kriptoAdj(0.30)', '#16a34a')}
+            ${btn('💥 Çöküş (-%30)', 'window.AP._kriptoAdj(-0.30)', '#ef4444')}
+            ${btn('🎲 Rastgele', 'window.AP._kriptoRandom()', '#7c3aed')}
+            ${btn('🔄 Otomatik Aç', 'window.AP._kriptoAutoToggle(true)', '#0891b2')}
+            ${btn('⏸ Otomatik Kapat', 'window.AP._kriptoAutoToggle(false)', '#475569')}
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+          ${coins.map(c => {
+            const p = kriptoPrices[c] || defaults[c] || 100;
+            return `<div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+                <span style="font-weight:700;color:#e2e8f0">${c}</span>
+                <span style="font-weight:900;color:#f59e0b">${fmt(p)}</span>
+              </div>
+              <div style="display:flex;gap:5px;margin-bottom:7px">
+                ${btn('-25%',`window.AP._kriptoHisse('${c}',-0.25)`,'#ef4444','font-size:10px;padding:4px 7px;flex:1')}
+                ${btn('-10%',`window.AP._kriptoHisse('${c}',-0.10)`,'#ef444466','font-size:10px;padding:4px 7px;flex:1')}
+                ${btn('+10%',`window.AP._kriptoHisse('${c}',0.10)`,'#16a34a66','font-size:10px;padding:4px 7px;flex:1')}
+                ${btn('+25%',`window.AP._kriptoHisse('${c}',0.25)`,'#16a34a','font-size:10px;padding:4px 7px;flex:1')}
+              </div>
+              <div style="display:flex;gap:6px">
+                <input id="kp_${c}" type="number" placeholder="Manuel" value="${p}"
+                  style="flex:1;padding:6px;background:#080d1a;border:1px solid #1a2f4a;border-radius:6px;color:#e2e8f0;font-size:12px">
+                ${btn('Set',`window.AP._kriptoSetPrice('${c}')`,'#3b82f6','font-size:11px;padding:6px 10px')}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
   }
 
-  function toggleAllBanChk() {
-    const all = document.getElementById('chkBanAll')?.checked;
-    document.querySelectorAll('.ban-chk').forEach(c => { c.checked = all; });
-  }
-  window.toggleAllBanChk = toggleAllBanChk;
+  /* ──────────────────────────────────────────────────────────────────────
+     HABERLER
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderNews() {
+    loading('Haberler yükleniyor...');
+    try {
+      const newsSnap = await window.db.ref('news').orderByChild('ts').limitToLast(30).once('value');
+      const newsList = [];
+      newsSnap.forEach(c => newsList.unshift({ key: c.key, ...c.val() }));
 
-  /* ══════════════════════════════════════════════════════════════════════
-     12. CSV İNDİR
-     ══════════════════════════════════════════════════════════════════════ */
-  async function exportBanList() {
-    const snap = await db().ref('users').orderByChild('banned').equalTo(true).once('value');
-    const rows = [['UID','Kullanıcı Adı','E-posta','Ban Sebebi','Ban Tarihi','Ban Bitiş','Para','Seviye']];
-    snap.forEach(child => {
-      const u = child.val();
-      rows.push([
-        child.key,
-        u.username || '—',
-        u.email || 'Anonim',
-        u.banReason || '—',
-        u.bannedAt ? new Date(u.bannedAt).toLocaleString('tr-TR') : '?',
-        u.tempBanUntil ? new Date(u.tempBanUntil).toLocaleString('tr-TR') : 'Kalıcı',
-        u.money || 0,
-        u.level || 1
+      body().innerHTML = section('📰 Haber Yönetimi', `
+        <!-- Haber Ekle -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">➕ Yeni Haber Yayınla</h3>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input id="newsTitle" placeholder="Haber başlığı..."
+              style="padding:10px 12px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+            <select id="newsType" style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#94a3b8;font-size:13px">
+              <option value="ekonomi">💰 Ekonomi</option>
+              <option value="siyasi">🏛️ Siyasi</option>
+              <option value="acil">🚨 Acil</option>
+              <option value="piyasa">📈 Piyasa</option>
+              <option value="genel">📄 Genel</option>
+            </select>
+            <select id="newsImpact" style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#94a3b8;font-size:13px">
+              <option value="positive">✅ Pozitif</option>
+              <option value="negative">❌ Negatif</option>
+              <option value="neutral">⚖️ Nötr</option>
+            </select>
+            ${btn('📰 Yayınla', 'window.AP._publishNews()', '#7c3aed', 'align-self:flex-start')}
+          </div>
+        </div>
+
+        <!-- Mevcut Haberler -->
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">📋 Son Haberler</h3>
+          ${newsList.length === 0 ? '<div style="color:#475569">Henüz haber yok.</div>' : ''}
+          ${newsList.map(n => `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #0d1a2e;padding:10px 0;gap:12px;flex-wrap:wrap">
+              <div>
+                <span style="color:#e2e8f0;font-size:13px">${esc(n.title || '-')}</span>
+                <span style="color:#475569;font-size:11px;margin-left:8px">${esc(n.type || '')} • ${ts(n.ts)}</span>
+              </div>
+              <button onclick="window.AP._deleteNews('${n.key}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">Sil</button>
+            </div>`).join('')}
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     GÜVENLİK
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderSecurity() {
+    loading('Güvenlik yükleniyor...');
+    try {
+      const [alerts, logins] = await Promise.all([
+        dbGet('security/alerts'),
+        window.db.ref('security/logins').orderByChild('ts').limitToLast(20).once('value').then(s => {
+          const r = []; s.forEach(c => r.unshift(c.val())); return r;
+        })
       ]);
-    });
-    const csv  = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = 'banlı_kullaniciler_' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click();
-    apToast('📥 Ban listesi indirildi', 'success');
+
+      const alertList = alerts ? Object.entries(alerts).flatMap(([uid, a]) =>
+        Object.entries(a || {}).map(([k, v]) => ({ uid, key: k, ...v }))
+      ).filter(a => !a.handled).slice(0, 20) : [];
+
+      body().innerHTML = section('🛡️ Güvenlik Merkezi', `
+        ${grid3([
+          card('AKTİF UYARILAR', alertList.length, null, alertList.length > 0 ? '#ef4444' : '#22c55e'),
+          card('SON GİRİŞLER', logins.length, 'son 20 giriş', '#60a5fa'),
+        ])}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">⚠️ Güvenlik Uyarıları</h3>
+            ${alertList.length === 0 ? '<div style="color:#475569;font-size:12px">Aktif uyarı yok ✅</div>' : ''}
+            ${alertList.map(a => `
+              <div style="border:1px solid #ef444433;border-radius:8px;padding:12px;margin-bottom:8px;background:#ef444411">
+                <div style="color:#ef4444;font-weight:600;font-size:12px">${esc(a.type || 'Uyarı')}</div>
+                <div style="color:#94a3b8;font-size:11px;margin-top:4px">${esc(a.label || '')} • ${ts(a.ts)}</div>
+                <button onclick="window.AP._resolveAlert('${a.uid}','${a.key}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;margin-top:6px">Çözüldü</button>
+              </div>`).join('')}
+          </div>
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🔐 Son Girişler</h3>
+            ${logins.map(l => `
+              <div style="border-bottom:1px solid #0d1a2e;padding:8px 0;font-size:11px">
+                <div style="color:#94a3b8">${esc(l.label || 'Bilinmeyen')} ${l.isNewDevice ? '<span style="color:#f59e0b">🆕 Yeni Cihaz</span>' : ''}</div>
+                <div style="color:#475569">${ts(l.ts)} • ${esc(l.tz || '')}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
   }
-  window.exportBanList = exportBanList;
 
-  /* ══════════════════════════════════════════════════════════════════════
-     13. OTOMATİK GEÇİCİ BAN SONA ERME MOTORU
-     ══════════════════════════════════════════════════════════════════════ */
-  function startTempBanEngine() {
-    async function checkExpiredBans() {
-      try {
-        const snap = await db().ref('users')
-          .orderByChild('banned').equalTo(true)
-          .once('value');
+  /* ──────────────────────────────────────────────────────────────────────
+     SİSTEM AYARLARI
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderSystem() {
+    loading('Sistem ayarları yükleniyor...');
+    try {
+      const sys = await dbGet('system');
+      const maintenance = sys?.maintenance?.active || false;
+      const idCardFee = sys?.idCardFee || 500;
+      const driverFee = sys?.driverLicenseFee || 1200;
+      const passportFee = sys?.passportFee || 3500;
+      const minWage = sys?.minWage || 17000;
 
-        const now_ = Date.now();
-        const toUnban = [];
+      body().innerHTML = section('⚙️ Sistem Ayarları', `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <!-- Bakım & Versiyon -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🔧 Bakım & Versiyon</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="color:#94a3b8;font-size:13px">Bakım Modu:</span>
+                <span style="color:${maintenance ? '#ef4444' : '#22c55e'};font-weight:700">${maintenance ? '🔧 Aktif' : '✅ Kapalı'}</span>
+              </div>
+              ${btn(maintenance ? '✅ Bakım Modunu Kapat' : '🔧 Bakım Modunu Aç',
+                `window.AP._setMaintenance(${!maintenance})`,
+                maintenance ? '#16a34a' : '#ea580c')}
+              <div style="margin-top:8px">
+                <label style="color:#94a3b8;font-size:12px;display:block;margin-bottom:6px">Yeni Versiyon Yayınla</label>
+                <div style="display:flex;gap:8px">
+                  ${inp('sysVersion','3.0.20260503','text','')}
+                  ${btn('Yayınla','window.AP._publishVersion()','#7c3aed')}
+                </div>
+              </div>
+            </div>
+          </div>
 
-        snap.forEach(child => {
-          const u = child.val();
-          if (u.tempBanUntil && u.tempBanUntil <= now_) {
-            toUnban.push({ uid: child.key, username: u.username });
-          }
-        });
+          <!-- Muhtarlık/Belediye Ücretleri -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🏛️ Devlet Hizmet Ücretleri</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Kimlik Kartı Ücreti: <b style="color:#f59e0b">${fmt(idCardFee)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('sys_idCard','₺','number',idCardFee.toString())}${btn('Güncelle','window.AP._updateSys(\"idCardFee\",\"sys_idCard\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Ehliyet Ücreti: <b style="color:#f59e0b">${fmt(driverFee)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('sys_driver','₺','number',driverFee.toString())}${btn('Güncelle','window.AP._updateSys(\"driverLicenseFee\",\"sys_driver\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Pasaport Ücreti: <b style="color:#f59e0b">${fmt(passportFee)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('sys_passport','₺','number',passportFee.toString())}${btn('Güncelle','window.AP._updateSys(\"passportFee\",\"sys_passport\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Asgari Ücret: <b style="color:#f59e0b">${fmt(minWage)}</b></label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('sys_minWage','₺','number',minWage.toString())}${btn('Güncelle','window.AP._updateSys(\"minWage\",\"sys_minWage\")','#16a34a')}</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        for (const { uid, username } of toUnban) {
-          await unbanUser(uid, true);
-          console.log(`[TempBanEngine] ✅ ${username || uid} geçici banı sona erdi, serbest bırakıldı.`);
-        }
+        <!-- Tehlikeli Eylemler -->
+        <div style="background:#0d1a2e;border:1px solid #ef444433;border-radius:12px;padding:20px">
+          <h3 style="color:#ef4444;margin:0 0 14px;font-size:15px;font-weight:700">⚠️ Tehlikeli Eylemler</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${btn('🗑️ Tüm Sohbeti Temizle', 'window.AP._clearChat()', '#ef4444')}
+            ${btn('📊 Borsa Sıfırla', 'window.AP._resetBorsa()', '#ea580c')}
+            ${btn('₿ Kripto Sıfırla', 'window.AP._resetKripto()', '#ea580c')}
+          </div>
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
 
-        if (toUnban.length > 0) updateBanCount();
-      } catch(e) {}
+  /* ──────────────────────────────────────────────────────────────────────
+     ANALİTİK
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderAnalytics() {
+    loading('Analitik yükleniyor...');
+    try {
+      const users = await dbGet('users');
+      const list = users ? Object.values(users) : [];
+
+      const byLevel = {};
+      const byProvince = {};
+      let totalMoney = 0, totalDiamonds = 0;
+
+      list.forEach(u => {
+        const lv = u?.level || 1;
+        byLevel[lv] = (byLevel[lv] || 0) + 1;
+        const prov = u?.province || 'Bilinmeyen';
+        byProvince[prov] = (byProvince[prov] || 0) + 1;
+        totalMoney += u?.money || 0;
+        totalDiamonds += u?.diamonds || 0;
+      });
+
+      const topUsers = list.sort((a, b) => (b?.money || 0) - (a?.money || 0)).slice(0, 10);
+      const topProvs = Object.entries(byProvince).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+      body().innerHTML = section('📈 Analitik & İstatistik', `
+        ${grid3([
+          card('TOPLAM KULLANICI', list.length, null, '#60a5fa'),
+          card('TOPLAM PARA', fmt(totalMoney), 'tüm oyuncular', '#f59e0b'),
+          card('TOPLAM ELMAS', totalDiamonds + ' 💎', null, '#a78bfa'),
+          card('ORT. SEVİYE', (list.reduce((s,u)=>s+(u?.level||1),0)/Math.max(1,list.length)).toFixed(1), null, '#22c55e'),
+        ])}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <!-- En Zengin -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">💰 En Zengin Oyuncular</h3>
+            ${topUsers.map((u, i) => `
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #0d1a2e;font-size:12px">
+                <span style="color:#94a3b8">#${i+1} <span style="color:#e2e8f0">${esc(u.username || '-')}</span></span>
+                <span style="color:#f59e0b;font-weight:700">${fmt(u.money || 0)}</span>
+              </div>`).join('')}
+          </div>
+
+          <!-- İllere Göre -->
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🗺️ İllere Göre Dağılım</h3>
+            ${topProvs.map(([prov, count]) => `
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #0d1a2e;font-size:12px">
+                <span style="color:#94a3b8">${esc(prov)}</span>
+                <span style="color:#60a5fa;font-weight:700">${count} oyuncu</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ETKİNLİK YÖNETİMİ
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderEvents() {
+    loading('Etkinlikler yükleniyor...');
+    try {
+      const evSnap = await window.db.ref('events').orderByChild('ts').limitToLast(20).once('value');
+      const evList = [];
+      evSnap.forEach(c => evList.unshift({ key: c.key, ...c.val() }));
+
+      body().innerHTML = section('⚡ Etkinlik Yönetimi', `
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">➕ Yeni Etkinlik</h3>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input id="evTitle" placeholder="Etkinlik adı..."
+              style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+            <input id="evDesc" placeholder="Açıklama..."
+              style="padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+            <div style="display:flex;gap:10px">
+              <input id="evReward" type="number" placeholder="Ödül (₺)" 
+                style="flex:1;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+              <input id="evDuration" type="number" placeholder="Süre (saat)"
+                style="flex:1;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px" value="24">
+            </div>
+            ${btn('⚡ Etkinlik Başlat', 'window.AP._createEvent()', '#7c3aed')}
+          </div>
+        </div>
+
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+          <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">📋 Aktif & Son Etkinlikler</h3>
+          ${evList.length === 0 ? '<div style="color:#475569">Etkinlik yok.</div>' : ''}
+          ${evList.map(ev => `
+            <div style="border:1px solid #1a2f4a;border-radius:8px;padding:12px;margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+                <div>
+                  <div style="color:#e2e8f0;font-weight:600">${esc(ev.title || '-')}</div>
+                  <div style="color:#94a3b8;font-size:11px;margin-top:4px">${esc(ev.desc || '')} • ${ts(ev.ts)}</div>
+                  ${ev.reward ? `<div style="color:#f59e0b;font-size:11px;margin-top:2px">Ödül: ${fmt(ev.reward)}</div>` : ''}
+                </div>
+                <button onclick="window.AP._deleteEvent('${ev.key}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer">Sil</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     SOHBET YÖNETİMİ
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderChat() {
+    loading('Sohbet yükleniyor...');
+    try {
+      const chatSnap = await window.db.ref('chat/global').orderByChild('ts').limitToLast(50).once('value');
+      const msgs = [];
+      chatSnap.forEach(c => msgs.unshift({ key: c.key, ...c.val() }));
+
+      body().innerHTML = section('💬 Sohbet Yönetimi', `
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          ${btn('🗑️ Tüm Sohbeti Temizle', 'window.AP._clearChat()', '#ef4444')}
+          ${btn('📢 Sistem Mesajı Gönder', 'window.AP._sendSystemMsg()', '#7c3aed')}
+          ${btn('🔄 Yenile', 'window.AP.navTo(null,\"chat\")', '#334155')}
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:16px;margin-bottom:14px">
+          <div style="display:flex;gap:10px">
+            <input id="systemMsgInput" placeholder="Sistem duyurusu yaz..."
+              style="flex:1;padding:10px;background:#080d1a;border:1px solid #1a2f4a;border-radius:8px;color:#e2e8f0;font-size:13px">
+            ${btn('Gönder','window.AP._sendSystemMsg()','#7c3aed')}
+          </div>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;overflow:hidden;max-height:600px;overflow-y:auto">
+          ${msgs.length === 0 ? '<div style="padding:20px;color:#475569;text-align:center">Mesaj yok</div>' : ''}
+          ${msgs.map(m => `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px;border-bottom:1px solid #0d1a2e;gap:12px" id="chat_${m.key}">
+              <div style="flex:1;min-width:0">
+                <span style="color:#60a5fa;font-size:12px;font-weight:600">${esc(m.username || m.user || 'Anonim')}</span>
+                <span style="color:#475569;font-size:10px;margin-left:8px">${ts(m.ts)}</span>
+                <div style="color:#e2e8f0;font-size:13px;margin-top:4px;word-break:break-word">${esc(m.text || m.msg || '')}</div>
+              </div>
+              <button onclick="window.AP._deleteMsg('${m.key}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;flex-shrink:0">Sil</button>
+            </div>`).join('')}
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     OYUN YÖNETİMİ
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderGames() {
+    loading('Oyun yönetimi yükleniyor...');
+    try {
+      const miniGames = await dbGet('miniGameConfig') || {};
+
+      body().innerHTML = section('🎮 Oyun Yönetimi', `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🎯 Mini Oyun Ayarları</h3>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Min. Bahis (₺)</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mg_minBet','₺','number',(miniGames.minBet||100).toString())}${btn('Güncelle','window.AP._mgSet(\"minBet\",\"mg_minBet\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Max. Bahis (₺)</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mg_maxBet','₺','number',(miniGames.maxBet||50000).toString())}${btn('Güncelle','window.AP._mgSet(\"maxBet\",\"mg_maxBet\")','#3b82f6')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Günlük Görev XP Çarpanı</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('mg_xpMult','1.0-5.0','number',(miniGames.xpMultiplier||1.0).toString())}${btn('Güncelle','window.AP._mgSet(\"xpMultiplier\",\"mg_xpMult\")','#7c3aed')}</div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;padding:20px">
+            <h3 style="color:#e2e8f0;margin:0 0 14px;font-size:15px;font-weight:700">🤖 Robot Sistemi</h3>
+            <p style="color:#94a3b8;font-size:12px;margin:0 0 12px">Robotlar oyuncuların reyonlarını doldurur ve ürün yönetimi yapar.</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Robot Dolum Aralığı (saat)</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('robot_interval','1-24','number',(miniGames.robotInterval||6).toString())}${btn('Güncelle','window.AP._mgSet(\"robotInterval\",\"robot_interval\")','#ea580c')}</div>
+              </div>
+              <div>
+                <label style="color:#94a3b8;font-size:12px">Robot Bütçesi (₺/dolum)</label>
+                <div style="display:flex;gap:8px;margin-top:4px">${inp('robot_budget','₺','number',(miniGames.robotBudget||10000).toString())}${btn('Güncelle','window.AP._mgSet(\"robotBudget\",\"robot_budget\")','#ea580c')}</div>
+              </div>
+              ${btn('🤖 Tüm Robotları Şimdi Çalıştır', 'window.AP._runAllRobots()', '#16a34a')}
+            </div>
+          </div>
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ŞÜPHELİ HAREKETLER
+  ────────────────────────────────────────────────────────────────────── */
+  async function renderTxLog() {
+    loading('İşlemler yükleniyor...');
+    try {
+      const txSnap = await window.db.ref('txlog').orderByChild('ts').limitToLast(100).once('value');
+      const txs = [];
+      txSnap.forEach(c => txs.unshift({ key: c.key, ...c.val() }));
+      const suspicious = txs.filter(t => Math.abs(t.amount || 0) > 10000000);
+
+      body().innerHTML = section('🔍 İşlem Günlüğü', `
+        <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span style="color:#94a3b8;font-size:13px">Şüpheli: <b style="color:#ef4444">${suspicious.length}</b> | Toplam: <b style="color:#60a5fa">${txs.length}</b></span>
+        </div>
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:12px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:#080d1a;color:#475569;border-bottom:1px solid #1a2f4a">
+              <th style="text-align:left;padding:10px">Kullanıcı</th>
+              <th style="text-align:left;padding:10px">İşlem</th>
+              <th style="text-align:right;padding:10px">Tutar</th>
+              <th style="text-align:right;padding:10px">Tarih</th>
+            </tr></thead>
+            <tbody>
+              ${txs.slice(0, 50).map(t => `
+                <tr style="border-bottom:1px solid #0d1a2e;${Math.abs(t.amount||0)>10000000?'background:#ef444411':''}" >
+                  <td style="padding:10px;color:#94a3b8">${esc(t.username || t.uid?.slice(0,8) || '-')}</td>
+                  <td style="padding:10px;color:#e2e8f0">${esc(t.desc || t.type || '-')}</td>
+                  <td style="padding:10px;text-align:right;color:${(t.amount||0)>=0?'#22c55e':'#ef4444'};font-weight:600">${fmt(t.amount||0)}</td>
+                  <td style="padding:10px;text-align:right;color:#475569">${ts(t.ts)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      `);
+    } catch(e) { body().innerHTML = `<div style="padding:24px;color:#ef4444">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     EYLEM FONKSİYONLARI
+  ────────────────────────────────────────────────────────────────────── */
+
+  function _toast(msg, type) {
+    if (typeof window.toast === 'function') window.toast(msg, type || 'success');
+    else alert(msg);
+  }
+
+  async function _viewUser(uid) {
+    try {
+      const u = await dbGet('users/' + uid);
+      const bank = await dbGet('bank/' + uid);
+      if (!u) return _toast('Kullanıcı bulunamadı', 'error');
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+      modal.innerHTML = `
+        <div style="background:#0d1a2e;border:1px solid #1a2f4a;border-radius:16px;padding:24px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:#e2e8f0;margin:0;font-size:17px">👤 ${esc(u.username || uid)}</h3>
+            <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;color:#ef4444;font-size:20px;cursor:pointer">✕</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:#94a3b8">
+            <div>UID: <span style="color:#475569">${uid}</span></div>
+            <div>E-posta: <span style="color:#e2e8f0">${esc(u.email || (u.isAnonymous ? '🛡️ Anonim' : '-'))}</span></div>
+            <div>Seviye: <span style="color:#a78bfa;font-weight:700">Lv${u.level || 1}</span></div>
+            <div>XP: <span style="color:#e2e8f0">${u.xp || 0}</span></div>
+            <div>Para: <span style="color:#f59e0b;font-weight:700">${fmt(u.money || 0)}</span></div>
+            <div>Elmas: <span style="color:#22c55e">${u.diamonds || 0} 💎</span></div>
+            <div>İl: <span style="color:#e2e8f0">${esc(u.province || u.location || '-')}</span></div>
+            <div>Rol: <span style="color:#60a5fa">${esc(u.role || 'vatandas')}</span></div>
+            <div>Kayıt: <span style="color:#475569">${ts(u.createdAt)}</span></div>
+            <div>Son Görülme: <span style="color:#475569">${ts(u.lastSeen)}</span></div>
+            <div>Banlı: <span style="color:${u.banned?'#ef4444':'#22c55e'}">${u.banned ? '🚫 Evet' : '✅ Hayır'}</span></div>
+            <div>Banka: <span style="color:#f59e0b">${fmt(bank?.balance || 0)}</span></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+            <button onclick="window.AP._editMoneyUser('${uid}','${esc(u.username||uid)}');this.closest('[style*=fixed]').remove()" 
+              style="background:#16a34a22;color:#22c55e;border:1px solid #16a34a;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">💰 Para Düzenle</button>
+            <button onclick="window.AP._editDiamondsUser('${uid}','${esc(u.username||uid)}');this.closest('[style*=fixed]').remove()"
+              style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">💎 Elmas Düzenle</button>
+            ${u.banned
+              ? `<button onclick="window.AP._unbanUser('${uid}');this.closest('[style*=fixed]').remove()" style="background:#16a34a22;color:#22c55e;border:1px solid #16a34a;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">✅ Banı Kaldır</button>`
+              : `<button onclick="window.AP._banUser('${uid}');this.closest('[style*=fixed]').remove()" style="background:#ef444422;color:#ef4444;border:1px solid #ef4444;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">🚫 Banla</button>`
+            }
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    } catch(e) { _toast('Hata: ' + e.message, 'error'); }
+  }
+
+  async function _banUser(uid) {
+    const reason = prompt('Ban sebebi:');
+    if (!reason) return;
+    await dbUpd('users/' + uid, { banned: true, banReason: reason, bannedAt: Date.now() });
+    await dbPush('notifs/' + uid, { type: 'ban', icon: '🚫', msg: 'Hesabınız banlandı: ' + reason, ts: Date.now(), read: false });
+    _toast('Kullanıcı banlandı ✅', 'success');
+    renderDashboard();
+  }
+
+  async function _unbanUser(uid) {
+    await dbUpd('users/' + uid, { banned: false, banReason: null });
+    _toast('Ban kaldırıldı ✅', 'success');
+    renderDashboard();
+  }
+
+  async function _editMoneyUser(uid, username) {
+    const amtStr = prompt(`${username} için para miktarı (eklemek için pozitif, çıkarmak için negatif):`);
+    if (!amtStr) return;
+    const amt = parseFloat(amtStr);
+    if (isNaN(amt)) return _toast('Geçersiz miktar', 'error');
+    const cur = (await dbGet('users/' + uid + '/money')) || 0;
+    await dbSet('users/' + uid + '/money', cur + amt);
+    await dbPush('txlog', { uid, username, desc: 'Admin para düzenleme', amount: amt, ts: Date.now(), adminAction: true });
+    _toast(`${username}'e ${fmt(amt)} ${amt >= 0 ? 'eklendi' : 'düşüldü'} ✅`);
+  }
+
+  async function _editDiamondsUser(uid, username) {
+    const amtStr = prompt(`${username} için elmas miktarı:`);
+    if (!amtStr) return;
+    const amt = parseInt(amtStr);
+    if (isNaN(amt)) return _toast('Geçersiz miktar', 'error');
+    const cur = (await dbGet('users/' + uid + '/diamonds')) || 0;
+    await dbSet('users/' + uid + '/diamonds', Math.max(0, cur + amt));
+    _toast(`${username}'e ${amt} elmas ${amt >= 0 ? 'eklendi' : 'düşüldü'} ✅`);
+  }
+
+  async function _setUserRole(uid, role) {
+    await dbSet('users/' + uid + '/role', role);
+    _toast('Rol güncellendi: ' + role, 'success');
+  }
+
+  async function _searchUsers() {
+    const q = document.getElementById('userSearch')?.value || '';
+    renderUsers(q);
+  }
+
+  async function _quickMoney() {
+    const amtStr = prompt('Her oyuncuya verilecek para miktarı (₺):');
+    if (!amtStr) return;
+    const amt = parseFloat(amtStr);
+    if (isNaN(amt) || amt <= 0) return _toast('Geçersiz miktar', 'error');
+    _toast('Para dağıtılıyor...', 'info');
+    const users = await dbGet('users');
+    if (!users) return;
+    let count = 0;
+    const updates = {};
+    for (const [uid, u] of Object.entries(users)) {
+      if (u?.banned) continue;
+      updates['users/' + uid + '/money'] = (u?.money || 0) + amt;
+      count++;
     }
-
-    // 2 dakikada bir kontrol
-    checkExpiredBans();
-    setInterval(checkExpiredBans, 2 * 60 * 1000);
-    console.log('[TempBanEngine] ✅ Geçici ban motoru başlatıldı (2 dk aralıklı)');
+    await window.db.ref().update(updates);
+    _toast(`${count} oyuncuya ${fmt(amt)} dağıtıldı ✅`, 'success');
   }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     YARDIMCI FONKSİYONLAR
-     ══════════════════════════════════════════════════════════════════════ */
-  function formatDuration(ms) {
-    if (ms <= 0) return '0sn';
-    const d = Math.floor(ms / 86400000);
-    const h = Math.floor((ms % 86400000) / 3600000);
-    const m = Math.floor((ms % 3600000) / 60000);
-    if (d > 0) return `${d}g ${h}s`;
-    if (h > 0) return `${h}s ${m}d`;
-    return `${m}d`;
+  async function _setInflation() {
+    const v = parseFloat(document.getElementById('newInflation')?.value || '0');
+    if (isNaN(v) || v < 0 || v > 2) return _toast('0-2 arası bir değer gir', 'error');
+    await dbSet('system/inflation', v);
+    _toast('Enflasyon %' + (v * 100).toFixed(1) + ' olarak ayarlandı ✅');
+    renderEconomy();
   }
 
-  function fmtMoney(n) {
-    if (!n || isNaN(n)) return '0₺';
-    if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(1) + 'Mr₺';
-    if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(1) + 'M₺';
-    if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(1) + 'B₺';
-    return n.toFixed(0) + '₺';
+  async function _adjInflation(delta) {
+    const cur = (await dbGet('system/inflation')) || 0;
+    const nv = delta === null ? 0 : Math.max(0, Math.min(2, cur + delta));
+    await dbSet('system/inflation', Math.round(nv * 1000) / 1000);
+    _toast('Enflasyon %' + (nv * 100).toFixed(1) + ' ✅');
+    renderEconomy();
   }
 
-  function maskEmail(email) {
-    if (!email) return '';
-    const [local, domain] = email.split('@');
-    if (!local || !domain) return email;
-    return local.slice(0, 2) + '*'.repeat(Math.max(1, local.length - 4)) + local.slice(-2) + '@' + domain;
+  async function _setTaxRate() {
+    const v = parseFloat(document.getElementById('newTaxRate')?.value || '0');
+    if (isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('system/taxRate', v);
+    _toast('Vergi oranı ayarlandı ✅');
+    renderEconomy();
   }
 
-  function escHtml(s) {
-    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function _setVatRate() {
+    const v = parseFloat(document.getElementById('newVatRate')?.value || '0');
+    if (isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('system/vatRate', v);
+    _toast('KDV ayarlandı ✅');
+    renderEconomy();
   }
 
-  function apBtnStyle(color, small = false) {
-    return `background:${color}22;border:1px solid ${color}55;color:${color};
-      padding:${small?'5px 10px':'10px 16px'};border-radius:8px;cursor:pointer;
-      font-weight:600;font-size:${small?'11px':'13px'};white-space:nowrap;transition:.2s`;
+  async function _updateTax(field, inputId) {
+    const v = parseFloat(document.getElementById(inputId)?.value || '0');
+    if (isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('system/' + field, v);
+    _toast(field + ' güncellendi ✅');
+    renderVergi();
   }
 
-  function statCard(icon, label, val, color) {
-    return `<div style="
-      background:#1e2d4a;border:1px solid ${color}44;border-radius:12px;
-      padding:12px 16px;min-width:110px;border-left:3px solid ${color};flex-shrink:0
-    ">
-      <div style="font-size:20px">${icon}</div>
-      <div style="color:#64748b;font-size:10px;margin-top:3px">${label}</div>
-      <div style="color:#e5e7eb;font-weight:900;font-size:18px">${val}</div>
-    </div>`;
+  async function _forceTax(uid, debt) {
+    const cur = (await dbGet('users/' + uid + '/money')) || 0;
+    if (cur < debt) {
+      const pay = cur;
+      await dbSet('users/' + uid + '/money', 0);
+      await dbSet('users/' + uid + '/taxDebt', debt - pay);
+      _toast('Kısmi tahsilat: ' + fmt(pay), 'warn');
+    } else {
+      await dbSet('users/' + uid + '/money', cur - debt);
+      await dbSet('users/' + uid + '/taxDebt', 0);
+      _toast('Vergi tahsil edildi: ' + fmt(debt), 'success');
+    }
+    renderVergi();
   }
 
-  function apDetailRow(label, val) {
-    return `<div style="background:#0f172a;border-radius:8px;padding:8px 10px">
-      <div style="color:#64748b;font-size:10px">${label}</div>
-      <div style="color:#e5e7eb;font-weight:600;font-size:13px">${val}</div>
-    </div>`;
+  async function _applyInterest(uid, debt) {
+    const rate = (await dbGet('system/interestRate')) || 0.30;
+    const newDebt = Math.ceil(debt * (1 + rate));
+    await dbSet('users/' + uid + '/taxDebt', newDebt);
+    _toast('Faiz uygulandı. Yeni borç: ' + fmt(newDebt), 'warn');
+    renderVergi();
   }
 
-  function apStatBox(label, val) {
-    return `<div style="background:#0f172a;border:1px solid #1e3a8a;border-radius:10px;padding:10px;text-align:center">
-      <div style="color:#64748b;font-size:10px">${label}</div>
-      <div style="color:#e5e7eb;font-weight:800;font-size:13px">${val}</div>
-    </div>`;
+  async function _forgiveTax(uid) {
+    if (!confirm('Vergi borcunu sil (af)?')) return;
+    await dbSet('users/' + uid + '/taxDebt', 0);
+    _toast('Vergi affedildi ✅');
+    renderVergi();
   }
 
-  function bizMini(icon, label, count) {
-    return `<div style="background:#0f172a;border-radius:8px;padding:6px 10px;text-align:center;min-width:55px">
-      <div style="font-size:16px">${icon}</div>
-      <div style="color:#64748b;font-size:10px">${label}</div>
-      <div style="color:#e5e7eb;font-weight:700;font-size:13px">${count}</div>
-    </div>`;
+  async function _setMaintenance(active) {
+    if (active && !confirm('Bakım modu açılacak, tüm oyuncular atılacak. Emin misin?')) return;
+    await dbSet('system/maintenance', { active, msg: active ? '🔧 Bakım yapılıyor, lütfen bekleyin.' : '' });
+    _toast('Bakım modu ' + (active ? 'AÇILdı 🔧' : 'KAPANDI ✅'), active ? 'warn' : 'success');
+    renderSystem();
   }
 
-  function apToast(msg, kind = 'success', ms = 3000) {
-    if (typeof window.toast === 'function') window.toast(msg, kind, ms);
+  async function _updateSys(field, inputId) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const v = el.type === 'number' ? parseFloat(el.value) : el.value;
+    if (el.type === 'number' && isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('system/' + field, v);
+    _toast(field + ' güncellendi ✅');
+    renderSystem();
   }
 
-  /* Basit iç modal (mevcut showModal varsa onu kullanır) */
-  function showApModal(title, html) {
-    if (typeof window.showModal === 'function') {
-      window.showModal(title, html, true);
+  async function _publishVersion() {
+    const v = document.getElementById('sysVersion')?.value?.trim();
+    if (!v) return _toast('Versiyon gir', 'error');
+    if (!confirm(`"${v}" versiyonunu yayınlayacaksın. Tüm oyuncular yenilenecek. Devam?`)) return;
+    await dbSet('system/appVersion', v);
+    _toast('Versiyon yayınlandı: ' + v + ' ✅');
+  }
+
+  async function _setRepoRate() {
+    const v = parseFloat(document.getElementById('mb_repo')?.value || '0');
+    if (isNaN(v) || v <= 0) return _toast('Geçersiz oran', 'error');
+    await dbSet('bank/repoRate', v);
+    _toast('Repo oranı %' + (v * 100).toFixed(1) + ' ✅');
+    renderMerkezBankasi();
+  }
+
+  async function _setBankRate(field, inputId) {
+    const v = parseFloat(document.getElementById(inputId)?.value || '0');
+    if (isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('bank/' + field, v);
+    _toast(field + ' güncellendi ✅');
+    renderMerkezBankasi();
+  }
+
+  async function _rateScenario(type) {
+    const scenarios = {
+      easy:    { repoRate: 0.30, depositRate: 0.26, loanRate: 0.40 },
+      tight:   { repoRate: 0.65, depositRate: 0.58, loanRate: 0.80 },
+      neutral: { repoRate: 0.42, depositRate: 0.38, loanRate: 0.55 },
+      crisis:  { repoRate: 1.20, depositRate: 1.10, loanRate: 1.80 }
+    };
+    const s = scenarios[type];
+    if (!s) return;
+    await window.db.ref('bank').update(s);
+    _toast('Faiz senaryosu uygulandı: ' + type + ' ✅');
+    renderMerkezBankasi();
+  }
+
+  async function _borsaAdj(delta) {
+    const prices = await dbGet('borsaFiyatlar') || {};
+    const updates = {};
+    for (const [k, v] of Object.entries(prices)) {
+      updates['borsaFiyatlar/' + k] = Math.max(1, Math.round(v * (1 + delta)));
+    }
+    await window.db.ref().update(updates);
+    _toast('Borsa ' + (delta > 0 ? '+' : '') + (delta * 100).toFixed(0) + '% ✅');
+    renderBorsa();
+  }
+
+  async function _borsaRandom() {
+    const prices = await dbGet('borsaFiyatlar') || {};
+    const updates = {};
+    for (const [k, v] of Object.entries(prices)) {
+      const chg = (Math.random() * 0.3) - 0.15;
+      updates['borsaFiyatlar/' + k] = Math.max(1, Math.round(v * (1 + chg)));
+    }
+    await window.db.ref().update(updates);
+    _toast('Rastgele borsa dalgalanması ✅');
+    renderBorsa();
+  }
+
+  async function _borsaHisse(ticker, delta) {
+    const cur = (await dbGet('borsaFiyatlar/' + ticker)) || 100;
+    await dbSet('borsaFiyatlar/' + ticker, Math.max(1, Math.round(cur * (1 + delta))));
+    _toast(ticker + ' ' + (delta > 0 ? '+' : '') + (delta * 100).toFixed(0) + '% ✅');
+    renderBorsa();
+  }
+
+  async function _borsaSetPrice(ticker) {
+    const v = parseFloat(document.getElementById('bp_' + ticker)?.value || '0');
+    if (isNaN(v) || v <= 0) return _toast('Geçersiz fiyat', 'error');
+    await dbSet('borsaFiyatlar/' + ticker, v);
+    _toast(ticker + ' fiyatı ' + fmt(v) + ' ✅');
+    renderBorsa();
+  }
+
+  async function _borsaAutoToggle(active) {
+    await dbSet('system/borsaAutoMode', active);
+    _toast('Borsa otomatik mod ' + (active ? 'açıldı' : 'kapatıldı'), active ? 'success' : 'warn');
+  }
+
+  async function _kriptoAdj(delta) {
+    const prices = await dbGet('kriptoPrices') || {};
+    const updates = {};
+    for (const [k, v] of Object.entries(prices)) {
+      updates['kriptoPrices/' + k] = Math.max(1, Math.round(v * (1 + delta)));
+    }
+    await window.db.ref().update(updates);
+    _toast('Kripto ' + (delta > 0 ? '+' : '') + (delta * 100).toFixed(0) + '% ✅');
+    renderKripto();
+  }
+
+  async function _kriptoRandom() {
+    const prices = await dbGet('kriptoPrices') || {};
+    const updates = {};
+    for (const [k, v] of Object.entries(prices)) {
+      const chg = (Math.random() * 0.5) - 0.25;
+      updates['kriptoPrices/' + k] = Math.max(1, Math.round(v * (1 + chg)));
+    }
+    await window.db.ref().update(updates);
+    _toast('Kripto rastgele dalgalandı ✅');
+    renderKripto();
+  }
+
+  async function _kriptoHisse(coin, delta) {
+    const cur = (await dbGet('kriptoPrices/' + coin)) || 100;
+    await dbSet('kriptoPrices/' + coin, Math.max(1, Math.round(cur * (1 + delta))));
+    _toast(coin + ' ' + (delta > 0 ? '+' : '') + (delta * 100).toFixed(0) + '% ✅');
+    renderKripto();
+  }
+
+  async function _kriptoSetPrice(coin) {
+    const v = parseFloat(document.getElementById('kp_' + coin)?.value || '0');
+    if (isNaN(v) || v <= 0) return _toast('Geçersiz fiyat', 'error');
+    await dbSet('kriptoPrices/' + coin, v);
+    _toast(coin + ' fiyatı ' + fmt(v) + ' ✅');
+    renderKripto();
+  }
+
+  async function _kriptoAutoToggle(active) {
+    await dbSet('system/kriptoAutoMode', active);
+    _toast('Kripto otomatik mod ' + (active ? 'açıldı' : 'kapatıldı'), active ? 'success' : 'warn');
+  }
+
+  async function _publishNews() {
+    const title = document.getElementById('newsTitle')?.value?.trim();
+    const type = document.getElementById('newsType')?.value || 'genel';
+    const impact = document.getElementById('newsImpact')?.value || 'neutral';
+    if (!title) return _toast('Başlık gir', 'error');
+    await dbPush('news', { title, type, impact, ts: Date.now(), publishedBy: window.GZ?.uid || 'admin' });
+    _toast('Haber yayınlandı ✅');
+    renderNews();
+  }
+
+  async function _deleteNews(key) {
+    if (!confirm('Haberi sil?')) return;
+    await dbSet('news/' + key, null);
+    _toast('Haber silindi');
+    renderNews();
+  }
+
+  async function _resolveAlert(uid, key) {
+    await dbSet('security/alerts/' + uid + '/' + key + '/handled', true);
+    _toast('Uyarı çözüldü ✅');
+    renderSecurity();
+  }
+
+  async function _clearChat() {
+    if (!confirm('Tüm global sohbet silinecek. Emin misin?')) return;
+    await dbSet('chat/global', null);
+    _toast('Sohbet temizlendi ✅');
+    renderChat();
+  }
+
+  async function _sendSystemMsg() {
+    const text = document.getElementById('systemMsgInput')?.value?.trim();
+    if (!text) {
+      const t = prompt('Sistem mesajı:');
+      if (!t) return;
+      await dbPush('chat/global', { username: '🤖 SİSTEM', text: t, ts: Date.now(), isSystem: true });
+      _toast('Mesaj gönderildi ✅');
+      renderChat();
       return;
     }
-    let el = document.getElementById('apBanModal');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'apBanModal';
-      el.style.cssText = `
-        position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200001;
-        display:flex;align-items:center;justify-content:center;padding:20px
-      `;
-      el.innerHTML = `
-        <div style="background:#1e2d4a;border:1px solid #1e3a8a;border-radius:16px;
-          max-width:600px;width:100%;max-height:90vh;overflow-y:auto;padding:20px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <div id="apBanModalTitle" style="color:#fbbf24;font-weight:800;font-size:16px"></div>
-            <button onclick="closeApModal()" style="background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);
-              color:#ef4444;padding:4px 12px;border-radius:6px;cursor:pointer;font-weight:700">✕</button>
-          </div>
-          <div id="apBanModalBody"></div>
-        </div>
-      `;
-      el.addEventListener('click', e => { if (e.target === el) closeApModal(); });
-      document.body.appendChild(el);
-    }
-    document.getElementById('apBanModalTitle').textContent = title;
-    document.getElementById('apBanModalBody').innerHTML = html;
-    el.style.display = 'flex';
+    await dbPush('chat/global', { username: '🤖 SİSTEM', text, ts: Date.now(), isSystem: true });
+    _toast('Mesaj gönderildi ✅');
+    renderChat();
   }
 
-  function closeApModal() {
-    if (typeof window.closeModal === 'function') { window.closeModal(); return; }
-    const el = document.getElementById('apBanModal');
-    if (el) el.style.display = 'none';
+  async function _deleteMsg(key) {
+    await dbSet('chat/global/' + key, null);
+    document.getElementById('chat_' + key)?.remove();
+    _toast('Mesaj silindi');
   }
-  window.closeAdminModal = closeApModal;
 
-  /* CSS animasyon */
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes fadeOut {
-      to { opacity: 0; transform: translateX(100%); }
-    }
-    #banTable tbody tr:hover { background: rgba(255,255,255,0.03); }
-    #banNavBtn:hover { background: rgba(220,38,38,0.1) !important; }
-  `;
-  document.head.appendChild(style);
+  async function _krediOnayla(key, uid, amount) {
+    if (!confirm(`${fmt(amount)} krediyi onayla?`)) return;
+    await dbUpd('krediBasvurulari/' + key, { status: 'approved', approvedAt: Date.now() });
+    const cur = (await dbGet('users/' + uid + '/money')) || 0;
+    await dbSet('users/' + uid + '/money', cur + amount);
+    await dbPush('users/' + uid + '/krediler', { amount, approvedAt: Date.now(), status: 'active', remainingBalance: amount });
+    await dbPush('notifs/' + uid, { type: 'kredi', icon: '✅', msg: '✅ Krediniz onaylandı! ' + fmt(amount) + ' hesabınıza yatırıldı.', ts: Date.now(), read: false });
+    await dbPush('txlog', { uid, desc: 'Kredi onayı', amount, ts: Date.now(), adminAction: true });
+    _toast('Kredi onaylandı ve para yatırıldı ✅');
+    renderKrediOnay();
+  }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     INIT
-     ══════════════════════════════════════════════════════════════════════ */
-  function init() {
-    // Panel DOM hazır olunca sidebar'a butonu ekle
-    const observer = new MutationObserver(() => {
-      if (document.querySelector('.admin-nav')) {
-        observer.disconnect();
-        injectBanNavButton();
+  async function _krediReddet(key, uid) {
+    const reason = prompt('Red sebebi:');
+    if (!reason) return;
+    await dbUpd('krediBasvurulari/' + key, { status: 'rejected', reason, rejectedAt: Date.now() });
+    await dbPush('notifs/' + uid, { type: 'kredi', icon: '❌', msg: '❌ Kredi başvurunuz reddedildi: ' + reason, ts: Date.now(), read: false });
+    _toast('Kredi reddedildi ✅');
+    renderKrediOnay();
+  }
+
+  async function _createEvent() {
+    const title = document.getElementById('evTitle')?.value?.trim();
+    const desc = document.getElementById('evDesc')?.value?.trim();
+    const reward = parseFloat(document.getElementById('evReward')?.value || '0');
+    const durHours = parseInt(document.getElementById('evDuration')?.value || '24');
+    if (!title) return _toast('Etkinlik adı gir', 'error');
+    await dbPush('events', { title, desc, reward, durHours, ts: Date.now(), endsAt: Date.now() + durHours * 3600000, active: true });
+    _toast('Etkinlik başlatıldı ✅');
+    renderEvents();
+  }
+
+  async function _deleteEvent(key) {
+    if (!confirm('Etkinliği sil?')) return;
+    await dbSet('events/' + key, null);
+    _toast('Etkinlik silindi');
+    renderEvents();
+  }
+
+  async function _triggerEvent(type) {
+    const events = {
+      boom: { title: '📈 Ekonomik Patlama', effect: 'income_boost', multiplier: 1.2 },
+      crisis: { title: '📉 Ekonomik Kriz', effect: 'income_penalty', multiplier: 0.8 },
+      harvest: { title: '🌾 Hasat Bolluğu', effect: 'farm_boost', multiplier: 1.5 },
+      industrial: { title: '🏭 Sanayi Patlaması', effect: 'factory_boost', multiplier: 1.4 },
+      forex: { title: '💱 Döviz Krizi', effect: 'forex_crisis', multiplier: 1.0 },
+      inflation_spike: { title: '🔥 Enflasyon Atağı', effect: 'inflation', multiplier: 1.0 }
+    };
+    const ev = events[type];
+    if (!ev) return;
+    await dbSet('system/activeEconomicEvent', { ...ev, startedAt: Date.now(), endsAt: Date.now() + 24 * 3600000 });
+    await dbPush('news', { title: ev.title, type: 'ekonomi', impact: type.includes('crisis') || type.includes('spike') ? 'negative' : 'positive', ts: Date.now() });
+    _toast(ev.title + ' başlatıldı ✅');
+  }
+
+  async function _mgSet(field, inputId) {
+    const v = parseFloat(document.getElementById(inputId)?.value || '0');
+    if (isNaN(v)) return _toast('Geçersiz değer', 'error');
+    await dbSet('miniGameConfig/' + field, v);
+    _toast(field + ' güncellendi ✅');
+  }
+
+  async function _runAllRobots() {
+    _toast('Robotlar çalıştırılıyor...', 'info');
+    try {
+      const users = await dbGet('users');
+      if (!users) return;
+      const budget = (await dbGet('miniGameConfig/robotBudget')) || 10000;
+      let count = 0;
+      const updates = {};
+      for (const [uid, u] of Object.entries(users)) {
+        if (u?.banned || !u?.dukkanlar) continue;
+        // Reyonları doldur
+        for (const [dKey, dukkan] of Object.entries(u.dukkanlar || {})) {
+          for (const [rKey] of Object.entries(dukkan.reyonlar || {})) {
+            updates[`users/${uid}/dukkanlar/${dKey}/reyonlar/${rKey}/stok`] = 100;
+            updates[`users/${uid}/dukkanlar/${dKey}/reyonlar/${rKey}/lastRefill`] = Date.now();
+          }
+        }
+        // Robot raporu bildir
+        updates[`users/${uid}/robotReport`] = { lastRun: Date.now(), msg: `Reyonlarınız dolduruldu. Harcama: ${(budget).toLocaleString('tr-TR')} ₺` };
+        count++;
       }
+      await window.db.ref().update(updates);
+      _toast(`${count} oyuncunun reyonları dolduruldu ✅`);
+    } catch(e) { _toast('Robot hatası: ' + e.message, 'error'); }
+  }
+
+  async function _resetBorsa() {
+    if (!confirm('Borsa sıfırlanacak. Emin misin?')) return;
+    const defaults = { GZGM:120, GZTK:85, GZBT:340, GZAN:67, GZIM:210, GZTA:155, GZET:98, GZFN:280 };
+    await dbSet('borsaFiyatlar', defaults);
+    _toast('Borsa sıfırlandı ✅');
+    renderBorsa();
+  }
+
+  async function _resetKripto() {
+    if (!confirm('Kripto sıfırlanacak?')) return;
+    const defaults = { BTC:2800000, ETH:175000, BNB:24000, SOL:7000, ADA:45, XRP:28, DOGE:12, GZC:150 };
+    await dbSet('kriptoPrices', defaults);
+    _toast('Kripto sıfırlandı ✅');
+    renderKripto();
+  }
+
+  async function _massGiveMoney() {
+    const amt = parseFloat(document.getElementById('massGiveAmount')?.value || '0');
+    if (!amt || amt <= 0) return _toast('Geçersiz miktar', 'error');
+    await window.AP._quickMoney_custom(amt);
+  }
+
+  async function _quickMoney_custom(amt) {
+    _toast('Para dağıtılıyor...', 'info');
+    const users = await dbGet('users');
+    if (!users) return;
+    const updates = {};
+    let count = 0;
+    for (const [uid, u] of Object.entries(users)) {
+      if (u?.banned) continue;
+      updates['users/' + uid + '/money'] = (u?.money || 0) + amt;
+      count++;
+    }
+    await window.db.ref().update(updates);
+    _toast(`${count} oyuncuya ${fmt(amt)} dağıtıldı ✅`);
+    renderEconomy();
+  }
+
+  async function _setStartingMoney() {
+    const v = parseFloat(document.getElementById('startingMoney')?.value || '25000');
+    if (isNaN(v) || v < 0) return _toast('Geçersiz miktar', 'error');
+    await dbSet('system/startingMoney', v);
+    _toast('Başlangıç parası ' + fmt(v) + ' ✅');
+  }
+
+  async function _loadElmasFiyatlari() {
+    const area = document.getElementById('elmasConfigArea');
+    if (!area) return;
+    try {
+      const config = await dbGet('elmasMagaza') || {
+        paket_100: { label: '100 Elmas', price: 9.99, diamonds: 100 },
+        paket_250: { label: '250 Elmas', price: 19.99, diamonds: 250 },
+        paket_600: { label: '600 Elmas', price: 44.99, diamonds: 600 },
+        paket_1300: { label: '1300 Elmas', price: 89.99, diamonds: 1300 },
+        paket_robot: { label: 'Robot (1ay)', price: 29.99, diamonds: 0, item: 'robot' }
+      };
+
+      area.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
+          ${Object.entries(config).map(([k, p]) => `
+            <div style="border:1px solid #1a2f4a;border-radius:8px;padding:12px;background:#080d1a">
+              <div style="font-weight:700;color:#e2e8f0;margin-bottom:8px">${esc(p.label || k)}</div>
+              <div style="display:flex;gap:8px;margin-bottom:6px">
+                <input id="ep_price_${k}" type="number" placeholder="₺ fiyat" value="${p.price || 0}"
+                  style="flex:1;padding:6px;background:#0d1a2e;border:1px solid #1a2f4a;border-radius:6px;color:#e2e8f0;font-size:12px">
+                <input id="ep_dia_${k}" type="number" placeholder="💎 elmas" value="${p.diamonds || 0}"
+                  style="flex:1;padding:6px;background:#0d1a2e;border:1px solid #1a2f4a;border-radius:6px;color:#e2e8f0;font-size:12px">
+              </div>
+              <button onclick="window.AP._saveElmasPaket('${k}')" 
+                style="width:100%;background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px;font-size:12px;cursor:pointer">💾 Kaydet</button>
+            </div>`).join('')}
+        </div>
+        <button onclick="window.AP._addElmasPaket()" 
+          style="margin-top:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer">➕ Yeni Paket Ekle</button>
+      `;
+    } catch(e) { area.innerHTML = `<span style="color:#ef4444">Hata: ${esc(e.message)}</span>`; }
+  }
+
+  async function _saveElmasPaket(key) {
+    const price = parseFloat(document.getElementById('ep_price_' + key)?.value || '0');
+    const diamonds = parseInt(document.getElementById('ep_dia_' + key)?.value || '0');
+    await dbUpd('elmasMagaza/' + key, { price, diamonds });
+    _toast('Paket güncellendi ✅');
+  }
+
+  async function _addElmasPaket() {
+    const label = prompt('Paket adı:');
+    if (!label) return;
+    const key = 'paket_' + Date.now();
+    await dbSet('elmasMagaza/' + key, { label, price: 9.99, diamonds: 100 });
+    _toast('Paket eklendi ✅');
+    _loadElmasFiyatlari();
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ANA NAV
+  ────────────────────────────────────────────────────────────────────── */
+  function navTo(btn, section) {
+    // Aktif butonu güncelle
+    document.querySelectorAll('.asnb').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    else {
+      document.querySelectorAll('.asnb').forEach(b => {
+        if (b.getAttribute('onclick')?.includes(`'${section}'`)) b.classList.add('active');
+      });
+    }
+
+    _activeSection = section;
+
+    const renderers = {
+      dashboard: renderDashboard,
+      users: () => renderUsers(''),
+      economy: renderEconomy,
+      krediOnay: renderKrediOnay,
+      vergi: renderVergi,
+      merkez: renderMerkezBankasi,
+      borsa: renderBorsa,
+      kripto: renderKripto,
+      news: renderNews,
+      chat: renderChat,
+      games: renderGames,
+      security: renderSecurity,
+      txlog: renderTxLog,
+      events: renderEvents,
+      system: renderSystem,
+      analytics: renderAnalytics
+    };
+
+    const fn = renderers[section];
+    if (fn) fn();
+    else body().innerHTML = `<div style="padding:40px;text-align:center;color:#475569">Bu bölüm yakında: <b style="color:#60a5fa">${section}</b></div>`;
+  }
+
+  function adminLogout() {
+    if (!confirm('Yönetici oturumundan çıkış yapılacak. Emin misin?')) return;
+    sessionStorage.removeItem('gz_admin_active');
+    sessionStorage.removeItem('gz_founder_session');
+    window.GZ_IS_FOUNDER = false;
+    window.GZ_FOUNDER_VERIFIED = false;
+    const adminScr = document.getElementById('adminScreen');
+    const gameScr = document.getElementById('gameScreen');
+    if (adminScr) adminScr.style.display = 'none';
+    if (gameScr) { gameScr.style.display = ''; gameScr.classList.add('active'); }
+    if (typeof window.toast === 'function') window.toast('Yönetici oturumu kapatıldı 🚪', 'info');
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     KREDİ BADGE CANLI DİNLEME
+  ────────────────────────────────────────────────────────────────────── */
+  function watchKrediBadge() {
+    window.db.ref('krediBasvurulari').on('value', snap => {
+      let count = 0;
+      snap.forEach(c => { if (c.val()?.status === 'pending') count++; });
+      const badge = document.getElementById('krediOnayBadge');
+      if (badge) { badge.hidden = count === 0; badge.textContent = count || ''; }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Admin paneli zaten açıksa direkt ekle
-    if (document.querySelector('.admin-nav')) injectBanNavButton();
-
-    // Geçici ban motoru başlat
-    startTempBanEngine();
-
-    console.log('%c[BanManager] ✅ Ban Yönetimi modülü yüklendi', 'color:#ef4444;font-weight:700');
   }
 
-  // Firebase hazır olunca başlat
-  if (typeof firebase !== 'undefined') {
-    init();
-  } else {
-    document.addEventListener('DOMContentLoaded', init);
+  /* ──────────────────────────────────────────────────────────────────────
+     openAdminPanel — giris.js tarafından çağrılır
+  ────────────────────────────────────────────────────────────────────── */
+  function openAdminPanel() {
+    // admin-yonetim.js için geriye dönük uyumluluk
+    window._adminTarget = 'adminScreenBody';
+
+    // Badge dinleyicisi
+    if (window.db) watchKrediBadge();
+
+    // Dashboard'ı render et
+    renderDashboard();
+
+    // admin-yonetim.js için admin-nav class ekle (backwards compat)
+    const nav = document.getElementById('adminScreenNav');
+    if (nav && !nav.classList.contains('admin-nav')) nav.classList.add('admin-nav');
+
+    console.log('[AdminPanel] ✅ Panel açıldı');
   }
 
-  // Global erişim
-  window.BanManager = {
-    openBanManager,
-    quickUnban,
-    applyTempBan,
-    exportBanList,
-    loadBanHistory,
-    updateBanCount
+  /* ──────────────────────────────────────────────────────────────────────
+     window.AP OBJESI
+  ────────────────────────────────────────────────────────────────────── */
+  window.AP = {
+    openAdminPanel,
+    renderDashboard,
+    navTo,
+    adminLogout,
+
+    // Kullanıcı yönetimi
+    _viewUser,
+    _banUser,
+    _unbanUser,
+    _editMoneyUser,
+    _editDiamondsUser,
+    _setUserRole,
+    _searchUsers,
+
+    // Para
+    _quickMoney,
+    _quickMoney_custom,
+    _massGiveMoney,
+    _setStartingMoney,
+
+    // Ekonomi
+    _setInflation,
+    _adjInflation,
+    _setTaxRate,
+    _setVatRate,
+    _updateTax,
+    _triggerEvent,
+
+    // Vergi
+    _forceTax,
+    _applyInterest,
+    _forgiveTax,
+
+    // Sistem
+    _setMaintenance,
+    _updateSys,
+    _publishVersion,
+
+    // Merkez Bankası
+    _setRepoRate,
+    _setBankRate,
+    _rateScenario,
+
+    // Borsa
+    _borsaAdj,
+    _borsaRandom,
+    _borsaHisse,
+    _borsaSetPrice,
+    _borsaAutoToggle,
+    _resetBorsa,
+
+    // Kripto
+    _kriptoAdj,
+    _kriptoRandom,
+    _kriptoHisse,
+    _kriptoSetPrice,
+    _kriptoAutoToggle,
+    _resetKripto,
+
+    // Haberler
+    _publishNews,
+    _deleteNews,
+
+    // Güvenlik
+    _resolveAlert,
+
+    // Sohbet
+    _clearChat,
+    _sendSystemMsg,
+    _deleteMsg,
+
+    // Kredi
+    _krediOnayla,
+    _krediReddet,
+
+    // Etkinlik
+    _createEvent,
+    _deleteEvent,
+
+    // Oyun
+    _mgSet,
+    _runAllRobots,
+
+    // Elmas Mağazası
+    _loadElmasFiyatlari,
+    _saveElmasPaket,
+    _addElmasPaket,
   };
 
-})();
+  console.log('[AdminPanel] ✅ window.AP hazır');
 
+})();
