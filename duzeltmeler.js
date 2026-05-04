@@ -786,8 +786,12 @@ window.GZX_ilSecModal = function() {
    FIX — renderMuhtarlik'e il seçimi butonu ekle (province yoksa)
    ══════════════════════════════════════════════════════════════════ */
 (function patchMuhtarlikIl() {
-  const _prev = window.renderMuhtarlik;
-  window.renderMuhtarlik = async function() {
+  // Geç bind — renderMuhtarlik gamezone-v3.js'te tanımlanıyor
+  const _tryBind = setInterval(() => {
+    if (typeof window.renderMuhtarlik !== 'function') return;
+    clearInterval(_tryBind);
+    const _prev = window.renderMuhtarlik;
+    window.renderMuhtarlik = async function() {
     // Province yoksa önce il seçtir
     const d = window.GZ?.data || {};
     if (!d.province && !d.location) {
@@ -810,16 +814,19 @@ window.GZX_ilSecModal = function() {
       return;
     }
     if (typeof _prev === 'function') return _prev();
-  };
+    };
+  }, 300);
 })();
 
 /* ══════════════════════════════════════════════════════════════════
    FIX — Rol seçilmemişse ticaret engellenmesin (sadece uyarı ver)
    ══════════════════════════════════════════════════════════════════ */
 (function patchTradeCheck() {
-  const _prevBuyShop = window.buyShop;
-  if (!_prevBuyShop) return;
-  window.buyShop = async function(type, city) {
+  const _tryBind = setInterval(() => {
+    if (typeof window.buyShop !== 'function') return;
+    clearInterval(_tryBind);
+    const _prevBuyShop = window.buyShop;
+    window.buyShop = async function(type, city) {
     const d = window.GZ?.data || {};
     if (!d.kimlikKarti) {
       window.toast?.('⚠️ Kimlik kartın yok! Muhtarlık → Kimlik Kartı Çıkart (500₺)', 'warn', 6000);
@@ -827,7 +834,8 @@ window.GZX_ilSecModal = function() {
       return;
     }
     return _prevBuyShop(type, city);
-  };
+    };
+  }, 300);
 })();
 
 /* ══════════════════════════════════════════════════════════════════

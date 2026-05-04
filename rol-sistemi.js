@@ -85,15 +85,8 @@ window.RS_erişimKontrol = function(tab) {
   return true;
 };
 
-/* render() fonksiyonunu sar — erişim kontrolü ekle */
-(function patchRenderWithAccess() {
-  const _prev = window.render;
-  window.render = function(tab) {
-    // Erişim kontrolü
-    if (!window.RS_erişimKontrol(tab)) return;
-    if (typeof _prev === 'function') _prev(tab);
-  };
-})();
+/* Erişim kontrolü — render patch KALDIRILDI (admin ekranı siyah yapıyordu)
+   Erişim kontrolü artık sadece RS_erişimKontrol() çağrısıyla manuel yapılır */
 
 /* ══════════════════════════════════════════════════════════════════════════
    BÖLÜM 2 — MUHTARİLİK TAM SİSTEMİ
@@ -614,26 +607,33 @@ window.RS_renderBelediyeBaskanPanel = async function() {
     </div>`;
 };
 
-/* Belediye başkanı için render() override */
+/* Belediye ve muhtar render override — adminScreen kontrolü ile */
 (function patchBelediyeRender() {
-  const _prev = window.render;
-  window.render = function(tab) {
-    if (tab === 'belediye') {
-      const role = RS.role();
-      if (role === 'mayor') {
-        window.RS_renderBelediyeBaskanPanel();
+  const _tryPatch = setInterval(() => {
+    if (typeof window.render !== 'function') return;
+    clearInterval(_tryPatch);
+    const _prev = window.render;
+    window.render = function(tab) {
+      // Admin ekranı açıksa render yapma
+      const adminScr = document.getElementById('adminScreen');
+      if (adminScr && adminScr.style.display === 'flex') {
+        if (typeof _prev === 'function') _prev(tab);
         return;
       }
-    }
-    if (tab === 'muhtarlik') {
-      const role = RS.role();
-      if (role === 'muhtar') {
-        window.RS_renderMuhtarPanel();
+      // GZ.data yüklü değilse direkt geç
+      if (!window.GZ?.data) {
+        if (typeof _prev === 'function') _prev(tab);
         return;
       }
-    }
-    if (typeof _prev === 'function') _prev(tab);
-  };
+      if (tab === 'belediye' && RS.role() === 'mayor') {
+        window.RS_renderBelediyeBaskanPanel(); return;
+      }
+      if (tab === 'muhtarlik' && RS.role() === 'muhtar') {
+        window.RS_renderMuhtarPanel(); return;
+      }
+      if (typeof _prev === 'function') _prev(tab);
+    };
+  }, 200);
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -812,19 +812,25 @@ window.RS_renderBBPanel = async function() {
     </div>`;
 };
 
-/* basbakanlik render override */
+/* basbakanlik render override — geç bind */
 (function patchBBRender() {
-  const _prev = window.render;
-  window.render = function(tab) {
-    if (tab === 'basbakanlik' || tab === 'cumhurbaskani') {
-      const role = RS.role();
-      if (['pm','president'].includes(role) || RS.data().isFounder) {
-        window.RS_renderBBPanel();
-        return;
+  const _tryPatch = setInterval(() => {
+    if (typeof window.render !== 'function') return;
+    clearInterval(_tryPatch);
+    const _prev = window.render;
+    window.render = function(tab) {
+      const adminScr = document.getElementById('adminScreen');
+      if (adminScr && adminScr.style.display === 'flex') {
+        if (typeof _prev === 'function') _prev(tab); return;
       }
-    }
-    if (typeof _prev === 'function') _prev(tab);
-  };
+      if (!window.GZ?.data) { if (typeof _prev === 'function') _prev(tab); return; }
+      if ((tab === 'basbakanlik' || tab === 'cumhurbaskani') &&
+          (['pm','president'].includes(RS.role()) || RS.data().isFounder)) {
+        window.RS_renderBBPanel(); return;
+      }
+      if (typeof _prev === 'function') _prev(tab);
+    };
+  }, 200);
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1135,16 +1141,21 @@ window.RS_secimBitisKontrol = async function() {
   }, 1000);
 })();
 
-/* secim render override */
+/* secim render override — geç bind */
 (function patchSecimRender() {
-  const _prev = window.render;
-  window.render = function(tab) {
-    if (tab === 'secim') {
-      window.RS_renderSecimler();
-      return;
-    }
-    if (typeof _prev === 'function') _prev(tab);
-  };
+  const _tryPatch = setInterval(() => {
+    if (typeof window.render !== 'function') return;
+    clearInterval(_tryPatch);
+    const _prev = window.render;
+    window.render = function(tab) {
+      const adminScr = document.getElementById('adminScreen');
+      if (adminScr && adminScr.style.display === 'flex') {
+        if (typeof _prev === 'function') _prev(tab); return;
+      }
+      if (tab === 'secim') { window.RS_renderSecimler(); return; }
+      if (typeof _prev === 'function') _prev(tab);
+    };
+  }, 200);
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════

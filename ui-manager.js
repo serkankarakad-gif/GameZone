@@ -75,8 +75,44 @@ function render(tab){
     case 'oyunlar':  if (typeof renderOyunlar === 'function') renderOyunlar(); else $('#appMain').innerHTML = '<div class="empty-state"><h3>Mini Oyunlar yükleniyor...</h3></div>'; break;
     case 'hikaye':   renderHikaye();   break;
     case 'sss':      renderSSS();      break;
-    case 'kredi':    if(typeof renderKredi==='function') renderKredi(); break;
-    case 'vergi':    if(typeof renderVergiOyuncu==='function') renderVergiOyuncu(); break;
+    case 'kredi':       if(typeof renderKredi==='function') renderKredi(); break;
+    case 'vergi':       if(typeof renderVergiOyuncu==='function') renderVergiOyuncu(); break;
+    // ─── Devlet & Kamu ───
+    case 'muhtarlik':   if(typeof renderMuhtarlik==='function') renderMuhtarlik(); break;
+    case 'belediye':    if(typeof renderBelediye==='function') renderBelediye(); break;
+    case 'sgk':         if(typeof renderSGK==='function') renderSGK(); break;
+    case 'secim':       if(typeof renderSecim==='function') renderSecim(); else if(typeof window.RS_renderSecimler==='function') window.RS_renderSecimler(); break;
+    case 'basbakanlik': if(typeof renderBasbakanlik==='function') renderBasbakanlik(); break;
+    case 'cumhurbaskani': if(typeof renderCumhurbaskani==='function') renderCumhurbaskani(); break;
+    // ─── Asayiş ───
+    case 'polis':       if(typeof renderPolis==='function') renderPolis(); break;
+    case 'askeriye':    if(typeof renderAskeriye==='function') renderAskeriye(); else main.innerHTML='<div class="empty-state"><h3>🎖️ Askeriye</h3><p>Yakında...</p></div>'; break;
+    case 'itfaiye':     if(typeof renderItfaiye==='function') renderItfaiye(); else main.innerHTML='<div class="empty-state"><h3>🚒 İtfaiye</h3><p>Yakında...</p></div>'; break;
+    case 'sahilguz':    if(typeof renderSahilGuz==='function') renderSahilGuz(); else main.innerHTML='<div class="empty-state"><h3>⚓ Sahil Güvenlik</h3><p>Yakında...</p></div>'; break;
+    case 'jandarma':    if(typeof renderJandarma==='function') renderJandarma(); else main.innerHTML='<div class="empty-state"><h3>🔫 Jandarma</h3><p>Yakında...</p></div>'; break;
+    // ─── Hukuk ───
+    case 'mahkeme':     if(typeof renderMahkeme==='function') renderMahkeme(); break;
+    case 'noter':       if(typeof renderNoter==='function') renderNoter(); break;
+    case 'sozlesme':    if(typeof renderSozlesme==='function') renderSozlesme(); break;
+    case 'konkurato':   if(typeof renderKonkurato==='function') renderKonkurato(); break;
+    // ─── Finans ───
+    case 'borsa':       if(typeof renderBorsa==='function') renderBorsa(); break;
+    case 'cuzdan':      if(typeof renderCuzdan==='function') renderCuzdan(); break;
+    case 'tahvil':      if(typeof renderTahvil==='function') renderTahvil(); break;
+    case 'futures':     if(typeof renderFutures==='function') renderFutures(); break;
+    case 'hedgefon':    if(typeof renderHedgeFon==='function') renderHedgeFon(); break;
+    case 'sigorta':     if(typeof renderSigorta==='function') renderSigorta(); break;
+    case 'emlak':       if(typeof renderEmlak==='function') renderEmlak(); break;
+    case 'karaborsa':   if(typeof renderKaraborsa==='function') renderKaraborsa(); break;
+    // ─── Profil & Diğer ───
+    case 'profil':      if(typeof renderProfil==='function') renderProfil(); break;
+    case 'franchise':   if(typeof renderFranchise==='function') renderFranchise(); break;
+    case 'calisan':     if(typeof renderCalisan==='function') renderCalisan(); break;
+    case 'noter2':      if(typeof renderNoter==='function') renderNoter(); break;
+    default:
+      // Bilinmeyen sekme — boş göster
+      if(tab) console.warn('[render] Bilinmeyen sekme:', tab);
+      break;
   }
 }
 window.render = render;
