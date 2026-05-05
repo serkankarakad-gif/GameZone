@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Türk İmparatorluğu</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LOADER -->
+<div id="loader" class="hidden">
+  <div class="loader-ring"></div>
+  <div class="loader-msg">Yükleniyor...</div>
+</div>
+
+<!-- AUTH EKRANI -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">Türk <span>İmparatorluğu</span></div>
+    <div class="auth-tabs">
+      <button class="active" onclick="AUTH.show('login')">Giriş Yap</button>
+      <button onclick="AUTH.show('reg')">Kayıt Ol</button>
+    </div>
+
+    <!-- GİRİŞ -->
+    <div id="login-screen">
+      <div class="form-group">
+        <label>E-posta</label>
+        <input id="login-email" type="email" class="input" placeholder="ornek@mail.com">
+      </div>
+      <div class="form-group">
+        <label>Şifre</label>
+        <input id="login-pass" type="password" class="input" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')AUTH.login()">
+      </div>
+      <button id="login-btn" class="btn btn-gold full-width" onclick="AUTH.login()">Giriş Yap</button>
+      <div style="text-align:center;margin-top:.9rem">
+        <button class="auth-link" onclick="AUTH.show('forgot')">Şifremi unuttum</button>
+      </div>
+    </div>
+
+    <!-- KAYIT -->
+    <div id="reg-screen" class="hidden">
+      <div class="form-group">
+        <label>Ad Soyad</label>
+        <input id="reg-name" type="text" class="input" placeholder="Ali Veli">
+      </div>
+      <div class="form-group">
+        <label>E-posta</label>
+        <input id="reg-email" type="email" class="input" placeholder="ornek@mail.com">
+      </div>
+      <div class="form-group">
+        <label>Şifre <small style="color:var(--text2)">(8+ karakter, büyük/küçük/rakam)</small></label>
+        <input id="reg-pass" type="password" class="input" placeholder="••••••••">
+      </div>
+      <div class="form-group">
+        <label>Şifre Tekrar</label>
+        <input id="reg-pass2" type="password" class="input" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')AUTH.register()">
+      </div>
+      <label class="auth-checkbox">
+        <input type="checkbox" id="reg-terms">
+        <span>Kullanım koşullarını kabul ediyorum</span>
+      </label>
+      <button id="reg-btn" class="btn btn-gold full-width" onclick="AUTH.register()">
+        Kayıt Ol — 50.000 TL başla!
+      </button>
+    </div>
+
+    <!-- ŞİFRE SIFIRLA -->
+    <div id="forgot-screen" class="hidden">
+      <p style="color:var(--text2);margin-bottom:1rem;font-size:.9rem">
+        Kayıtlı e-posta adresinize sıfırlama bağlantısı gönderilecek.
+      </p>
+      <div class="form-group">
+        <label>E-posta</label>
+        <input id="forgot-email" type="email" class="input" placeholder="ornek@mail.com"
+               onkeydown="if(event.key==='Enter')AUTH.forgotPassword()">
+      </div>
+      <button id="forgot-btn" class="btn btn-gold full-width" onclick="AUTH.forgotPassword()">
+        Sıfırlama Linki Gönder
+      </button>
+      <div style="text-align:center;margin-top:.9rem">
+        <button class="auth-link" onclick="AUTH.show('login')">← Geri dön</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ANA UYGULAMA -->
+<div id="app" class="hidden">
+
+  <!-- Hisse Ticker -->
+  <div class="ticker-bar">
+    <span class="ticker-label">📈 BİST</span>
+    <div id="ticker-strip">Piyasa yükleniyor...</div>
+  </div>
+
+  <!-- Üst Bar / HUD -->
+  <header class="app-header">
+    <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+    <div class="header-logo">Türk <span>İmparatorluğu</span></div>
+    <div class="hud-items">
+      <div class="hud-item">💰 <b id="hud-tl">₺0</b></div>
+      <div class="hud-item" id="hud-elmas">0💎</div>
+      <div class="hud-item" id="hud-level">Lv.1</div>
+      <div class="hud-item" id="hud-name">—</div>
+      <button class="btn btn-sm btn-red" onclick="AUTH.logout()">Çıkış</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div class="nav-section">Ana</div>
+      <button class="nav-item active" data-s="dashboard"       onclick="UI.navigate('dashboard')"><span class="nav-icon">📊</span>Kontrol Paneli</button>
+      <button class="nav-item"        data-s="profil"          onclick="UI.navigate('profil')"><span class="nav-icon">👤</span>Profilim</button>
+
+      <div class="nav-section">💰 Finans</div>
+      <button class="nav-item" data-s="banka"             onclick="UI.navigate('banka')"><span class="nav-icon">🏦</span>Bankacılık</button>
+      <button class="nav-item" data-s="borsa"             onclick="UI.navigate('borsa')"><span class="nav-icon">📈</span>Borsa (BIST)</button>
+      <button class="nav-item" data-s="kripto"            onclick="UI.navigate('kripto')"><span class="nav-icon">₿</span>Kripto</button>
+      <button class="nav-item" data-s="tahvil"            onclick="UI.navigate('tahvil')"><span class="nav-icon">📜</span>Tahvil & Bono</button>
+      <button class="nav-item" data-s="fonlar"            onclick="UI.navigate('fonlar')"><span class="nav-icon">📊</span>Yatırım Fonları</button>
+      <button class="nav-item" data-s="sigorta"           onclick="UI.navigate('sigorta')"><span class="nav-icon">🛡️</span>Sigorta</button>
+      <button class="nav-item" data-s="gayrimenkul"       onclick="UI.navigate('gayrimenkul')"><span class="nav-icon">🏠</span>Gayrimenkul</button>
+      <button class="nav-item" data-s="dijital-cuzdani"   onclick="UI.navigate('dijital-cuzdani')"><span class="nav-icon">📱</span>Dijital Cüzdan</button>
+
+      <div class="nav-section">🏭 Ekonomi</div>
+      <button class="nav-item" data-s="uretim"        onclick="UI.navigate('uretim')"><span class="nav-icon">🏭</span>Üretim</button>
+      <button class="nav-item" data-s="ticaret"       onclick="UI.navigate('ticaret')"><span class="nav-icon">🏪</span>Ticaret</button>
+      <button class="nav-item" data-s="lojistik"      onclick="UI.navigate('lojistik')"><span class="nav-icon">🚛</span>Lojistik</button>
+      <button class="nav-item" data-s="ihracat"       onclick="UI.navigate('ihracat')"><span class="nav-icon">🌍</span>İhracat</button>
+      <button class="nav-item" data-s="ihaleler"      onclick="UI.navigate('ihaleler')"><span class="nav-icon">📋</span>İhaleler</button>
+      <button class="nav-item" data-s="karaborsa"     onclick="UI.navigate('karaborsa')"><span class="nav-icon">⚫</span>Karaborsa</button>
+      <button class="nav-item" data-s="oyuncu-pazari" onclick="UI.navigate('oyuncu-pazari')"><span class="nav-icon">🤝</span>Oyuncu Pazarı</button>
+
+      <div class="nav-section">🏛️ Devlet</div>
+      <button class="nav-item" data-s="belediye"    onclick="UI.navigate('belediye')"><span class="nav-icon">🏛️</span>Belediye</button>
+      <button class="nav-item" data-s="muhtarlik"   onclick="UI.navigate('muhtarlik')"><span class="nav-icon">🏘️</span>Muhtarlık</button>
+      <button class="nav-item" data-s="sgk"         onclick="UI.navigate('sgk')"><span class="nav-icon">🩺</span>SGK</button>
+      <button class="nav-item" data-s="vergi"       onclick="UI.navigate('vergi')"><span class="nav-icon">📋</span>Vergi Dairesi</button>
+      <button class="nav-item" data-s="kredi-ofisi" onclick="UI.navigate('kredi-ofisi')"><span class="nav-icon">📊</span>Kredi Ofisi</button>
+      <button class="nav-item" data-s="emniyet"     onclick="UI.navigate('emniyet')"><span class="nav-icon">🚔</span>Emniyet</button>
+      <button class="nav-item" data-s="mahkeme"     onclick="UI.navigate('mahkeme')"><span class="nav-icon">⚖️</span>Mahkeme</button>
+      <button class="nav-item" data-s="noterlik"    onclick="UI.navigate('noterlik')"><span class="nav-icon">📄</span>Noterlik</button>
+      <button class="nav-item" data-s="siyaset"     onclick="UI.navigate('siyaset')"><span class="nav-icon">🗳️</span>Siyaset</button>
+
+      <div class="nav-section">Diğer</div>
+      <button class="nav-item" data-s="haberler" onclick="UI.navigate('haberler')"><span class="nav-icon">📰</span>Haberler</button>
+      <button class="nav-item" data-s="hikaye"   onclick="UI.navigate('hikaye')"><span class="nav-icon">📖</span>Hikaye</button>
+      <button class="nav-item" data-s="sss"      onclick="UI.navigate('sss')"><span class="nav-icon">❓</span>SSS</button>
+
+      <div class="sidebar-footer">
+        <button class="nav-item" data-s="magaza" onclick="UI.navigate('magaza')"><span class="nav-icon">💎</span>Elmas Mağazası</button>
+        <button class="nav-item" onclick="AUTH.logout()"><span class="nav-icon">🚪</span>Çıkış Yap</button>
+      </div>
+    </nav>
+
+    <!-- İÇERİK -->
+    <main class="main-area" id="main-content"></main>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" class="hidden" onclick="if(event.target===this)UI.closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button class="modal-close" onclick="UI.closeModal()">✕</button>
+    </div>
+    <div id="modal-body-wrap"></div>
+  </div>
+</div>
+
+<!-- TOASTLAR -->
+<div id="toast-container"></div>
+
+<!-- ════ SCRIPT SIRASI — DEĞİŞTİRME ════ -->
+<!-- 1. Firebase CDN -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- 2. Oyun — sıra kritik -->
+<script src="data.js"></script>
+<script src="security.js"></script><!-- data.js'den sonra, diğerlerinden önce -->
+<script src="firebase.js"></script>
+<script src="auth.js"></script>
+<script src="ui.js"></script>
+<script src="devlet.js"></script>
+<script src="ekonomi.js"></script>
+<script src="finans.js"></script>
+<script src="game.js"></script><!-- en son — window.load'da GAME.init() çağırır -->
+
+</body>
+</html>
