@@ -1,0 +1,1800 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>İmparatorluk Divan-ı Hümayun — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<style>
+/* ═══ TEMEL ═══ */
+:root {
+  --gold:     #d4a017;
+  --gold-l:   #f0c040;
+  --gold-d:   #8a6500;
+  --red:      #8b1a1a;
+  --red-l:    #c8102e;
+  --teal:     #0d7377;
+  --teal-l:   #14a0a5;
+  --bg:       #0a0705;
+  --bg2:      #110e08;
+  --bg3:      #1a1508;
+  --panel:    rgba(20,16,8,.92);
+  --border:   rgba(212,160,23,.25);
+  --border-l: rgba(212,160,23,.6);
+  --text:     #e8d89a;
+  --text2:    #8a7540;
+  --text3:    #5a4d28;
+  --green:    #2d7a3a;
+  --green-l:  #4caf60;
+  --shadow:   0 8px 40px rgba(0,0,0,.8);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Crimson Pro', Georgia, serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Osmanlı çarşısı arka plan */
+body::before {
+  content:'';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(139,26,26,.15) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 80%, rgba(13,115,119,.12) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 100% at 50% 50%, rgba(212,160,23,.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Geometrik desen overlay */
+body::after {
+  content:'';
+  position: fixed;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(45deg, transparent, transparent 30px, rgba(212,160,23,.015) 30px, rgba(212,160,23,.015) 31px),
+    repeating-linear-gradient(-45deg, transparent, transparent 30px, rgba(212,160,23,.015) 30px, rgba(212,160,23,.015) 31px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ═══ AUTH EKRANI ═══ */
+#auth-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #1a1008 0%, #050303 100%);
+}
+
+.auth-box {
+  position: relative;
+  width: 420px;
+  padding: 3rem;
+  background: var(--panel);
+  border: 1px solid var(--border-l);
+  border-radius: 4px;
+  box-shadow: var(--shadow), 0 0 60px rgba(212,160,23,.08);
+  text-align: center;
+}
+
+.auth-box::before, .auth-box::after {
+  content: '❋';
+  position: absolute;
+  color: var(--gold);
+  font-size: 1.2rem;
+  opacity: .5;
+}
+.auth-box::before { top: 1rem; left: 1rem; }
+.auth-box::after  { bottom: 1rem; right: 1rem; }
+
+.auth-seal {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1.5rem;
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  background: radial-gradient(circle, rgba(212,160,23,.1) 0%, transparent 70%);
+  animation: pulse-seal 3s ease-in-out infinite;
+}
+
+@keyframes pulse-seal {
+  0%,100% { box-shadow: 0 0 0 0 rgba(212,160,23,.3); }
+  50%      { box-shadow: 0 0 20px 8px rgba(212,160,23,.1); }
+}
+
+.auth-title {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 1.1rem;
+  color: var(--gold);
+  text-shadow: 0 0 20px rgba(212,160,23,.4);
+  margin-bottom: .4rem;
+}
+.auth-subtitle {
+  font-size: .85rem;
+  color: var(--text2);
+  margin-bottom: 2rem;
+  font-style: italic;
+}
+
+.auth-input {
+  width: 100%;
+  padding: .85rem 1.1rem;
+  background: rgba(212,160,23,.05);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: 'Crimson Pro', serif;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  transition: border-color .2s, box-shadow .2s;
+  outline: none;
+}
+.auth-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(212,160,23,.15);
+}
+.auth-input::placeholder { color: var(--text3); }
+
+.btn-auth {
+  width: 100%;
+  padding: .95rem;
+  background: linear-gradient(135deg, var(--gold-d) 0%, var(--gold) 50%, var(--gold-d) 100%);
+  border: none;
+  border-radius: 3px;
+  color: #0a0705;
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  cursor: pointer;
+  transition: all .25s;
+  margin-top: .5rem;
+}
+.btn-auth:hover  { background: var(--gold); box-shadow: 0 0 20px rgba(212,160,23,.4); }
+.btn-auth:active { transform: scale(.98); }
+
+#auth-err {
+  color: #e05555;
+  font-size: .85rem;
+  margin-top: .75rem;
+  min-height: 1.2rem;
+}
+
+/* ═══ LAYOUT ═══ */
+#admin-app {
+  display: none;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* Üst Başlık */
+.imperial-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(10,7,5,.96);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.header-brand-icon { font-size: 1.8rem; filter: drop-shadow(0 0 6px rgba(212,160,23,.5)); }
+.header-brand-text { font-family: 'Cinzel Decorative', serif; font-size: .95rem; color: var(--gold); text-shadow: 0 0 15px rgba(212,160,23,.3); }
+.header-brand-text small { display: block; font-family: 'Crimson Pro', serif; font-size: .72rem; color: var(--text2); font-weight: 300; letter-spacing: .1em; text-transform: uppercase; }
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: .83rem;
+  color: var(--text2);
+}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green-l); box-shadow: 0 0 6px var(--green-l); animation: blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.btn-signout {
+  padding: .4rem 1rem;
+  background: transparent;
+  border: 1px solid var(--red);
+  border-radius: 3px;
+  color: var(--red-l);
+  font-family: 'Cinzel', serif;
+  font-size: .75rem;
+  cursor: pointer;
+  transition: all .2s;
+}
+.btn-signout:hover { background: var(--red); color: #fff; }
+
+/* Ana içerik */
+.app-body {
+  display: flex;
+  min-height: calc(100vh - 64px);
+}
+
+/* Sol Sidebar */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: rgba(10,8,4,.95);
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 0;
+  position: sticky;
+  top: 64px;
+  height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.nav-cat {
+  font-family: 'Cinzel', serif;
+  font-size: .65rem;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 1.2rem 1.25rem .4rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .65rem 1.25rem;
+  color: var(--text2);
+  font-size: .88rem;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  transition: all .2s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover { color: var(--text); background: rgba(212,160,23,.06); }
+.nav-item.active { color: var(--gold); background: rgba(212,160,23,.08); border-left-color: var(--gold); }
+.nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+
+/* Ana içerik alanı */
+.main-panel {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+/* ═══ PANEL KARTI ═══ */
+.panel-section { display: none; }
+.panel-section.active { display: block; }
+
+.section-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  color: var(--gold);
+  margin-bottom: .35rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-l), transparent);
+}
+.section-sub { color: var(--text2); font-size: .88rem; margin-bottom: 2rem; font-style: italic; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+.card-grid-3 { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+.panel-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .25s, box-shadow .25s;
+}
+.panel-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--gold), transparent);
+  opacity: 0;
+  transition: opacity .25s;
+}
+.panel-card:hover { border-color: var(--border-l); box-shadow: 0 4px 20px rgba(0,0,0,.5); }
+.panel-card:hover::before { opacity: 1; }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: 1.25rem;
+}
+.card-icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.ci-gold  { background: rgba(212,160,23,.15); border: 1px solid rgba(212,160,23,.3); }
+.ci-red   { background: rgba(139,26,26,.2);   border: 1px solid rgba(200,16,46,.3);  }
+.ci-teal  { background: rgba(13,115,119,.2);  border: 1px solid rgba(20,160,165,.3); }
+.ci-green { background: rgba(45,122,58,.2);   border: 1px solid rgba(76,175,96,.3);  }
+.ci-purple{ background: rgba(100,50,150,.2);  border: 1px solid rgba(150,80,200,.3); }
+
+.card-title { font-family: 'Cinzel', serif; font-size: .95rem; color: var(--gold); }
+.card-desc  { font-size: .8rem; color: var(--text2); margin-top: .1rem; }
+
+/* ═══ FORM ELEMENTLERİ ═══ */
+.form-label {
+  display: block;
+  font-family: 'Cinzel', serif;
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: .5rem;
+}
+.form-input {
+  width: 100%;
+  padding: .65rem .9rem;
+  background: rgba(212,160,23,.05);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: 'Crimson Pro', serif;
+  font-size: .95rem;
+  outline: none;
+  transition: border-color .2s;
+  margin-bottom: .85rem;
+}
+.form-input:focus { border-color: var(--gold); }
+.form-input::placeholder { color: var(--text3); }
+
+textarea.form-input { resize: vertical; min-height: 80px; }
+
+/* Slider */
+.slider-wrap { margin-bottom: 1rem; }
+.slider-row  { display: flex; align-items: center; gap: 1rem; }
+.slider-val  { font-family: 'Cinzel', serif; font-size: .9rem; color: var(--gold); min-width: 60px; text-align: right; }
+
+input[type=range] {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--gold-l), var(--gold));
+  box-shadow: 0 0 8px rgba(212,160,23,.5);
+  cursor: pointer;
+  transition: box-shadow .2s;
+}
+input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(212,160,23,.8); }
+
+/* Butonlar */
+.btn {
+  padding: .6rem 1.2rem;
+  border: none;
+  border-radius: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: .8rem;
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+}
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: scale(.97); }
+
+.btn-gold  { background: linear-gradient(135deg, var(--gold-d), var(--gold)); color: #0a0705; font-weight: 700; }
+.btn-gold:hover:not(:disabled) { background: var(--gold); box-shadow: 0 0 15px rgba(212,160,23,.35); }
+
+.btn-red   { background: linear-gradient(135deg, #5a0f0f, var(--red-l)); color: #fff; }
+.btn-red:hover:not(:disabled) { box-shadow: 0 0 15px rgba(200,16,46,.35); }
+
+.btn-teal  { background: linear-gradient(135deg, #064c4f, var(--teal-l)); color: #fff; }
+.btn-teal:hover:not(:disabled) { box-shadow: 0 0 15px rgba(13,115,119,.35); }
+
+.btn-ghost { background: transparent; border: 1px solid var(--border-l); color: var(--text); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+
+.btn-sm { padding: .4rem .85rem; font-size: .72rem; }
+.btn-lg { padding: .85rem 1.75rem; font-size: .9rem; }
+.btn-fw { width: 100%; justify-content: center; margin-top: .5rem; }
+
+.btn-group { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: .85rem; }
+
+/* Stat kartları */
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem;
+  text-align: center;
+}
+.stat-val  { font-family: 'Cinzel', serif; font-size: 1.6rem; color: var(--gold); }
+.stat-lbl  { font-size: .78rem; color: var(--text2); margin-top: .25rem; text-transform: uppercase; letter-spacing: .08em; }
+
+/* Tablo */
+.data-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.data-table th { text-align: left; padding: .65rem .85rem; font-family: 'Cinzel', serif; font-size: .7rem; letter-spacing: .08em; color: var(--text2); border-bottom: 1px solid var(--border); background: rgba(212,160,23,.04); }
+.data-table td { padding: .65rem .85rem; border-bottom: 1px solid rgba(212,160,23,.08); vertical-align: middle; }
+.data-table tr:hover td { background: rgba(212,160,23,.04); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 4px; }
+
+/* Badge */
+.badge { display: inline-block; padding: .2rem .6rem; border-radius: 20px; font-size: .72rem; font-family: 'Cinzel', serif; }
+.badge-gold   { background: rgba(212,160,23,.2); color: var(--gold); border: 1px solid rgba(212,160,23,.3); }
+.badge-red    { background: rgba(200,16,46,.2);  color: #f07070;    border: 1px solid rgba(200,16,46,.3);  }
+.badge-green  { background: rgba(45,122,58,.2);  color: var(--green-l); border: 1px solid rgba(76,175,96,.3); }
+.badge-teal   { background: rgba(13,115,119,.2); color: var(--teal-l); border: 1px solid rgba(20,160,165,.3); }
+.badge-grey   { background: rgba(255,255,255,.07); color: var(--text2); border: 1px solid rgba(255,255,255,.1); }
+
+/* Toast */
+#toast-wrap { position: fixed; bottom: 2rem; right: 2rem; z-index: 9999; display: flex; flex-direction: column; gap: .75rem; }
+.toast {
+  padding: .9rem 1.4rem;
+  border-radius: 4px;
+  font-size: .88rem;
+  border-left: 3px solid;
+  backdrop-filter: blur(10px);
+  animation: toast-in .3s ease;
+  max-width: 360px;
+}
+@keyframes toast-in { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+.toast-success { background: rgba(45,122,58,.9);  border-color: var(--green-l); color: #9ff0ae; }
+.toast-error   { background: rgba(139,26,26,.9);  border-color: var(--red-l);   color: #ffaaaa; }
+.toast-info    { background: rgba(13,115,119,.9); border-color: var(--teal-l);  color: #9fe8eb; }
+.toast-gold    { background: rgba(100,70,0,.9);   border-color: var(--gold);    color: var(--gold-l); }
+
+/* Onay Modal */
+#confirm-modal {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,.85);
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#confirm-modal.open { display: flex; }
+.confirm-box {
+  background: var(--panel);
+  border: 1px solid var(--border-l);
+  border-radius: 4px;
+  padding: 2.5rem;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.8);
+}
+.confirm-icon { font-size: 3rem; margin-bottom: 1rem; }
+.confirm-title { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--gold); margin-bottom: .75rem; }
+.confirm-msg   { color: var(--text2); font-size: .9rem; line-height: 1.6; margin-bottom: 1.75rem; }
+.confirm-btns  { display: flex; gap: 1rem; justify-content: center; }
+
+/* Ferman (İmparatorluk popup) */
+#ferman-overlay {
+  position: fixed; inset: 0; z-index: 20000;
+  background: rgba(0,0,0,.92);
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px);
+}
+#ferman-overlay.open { display: flex; }
+.ferman-box {
+  background: linear-gradient(160deg, #1a1208, #0d0a04);
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  padding: 3rem 3.5rem;
+  max-width: 600px;
+  width: 90%;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 0 80px rgba(212,160,23,.15), 0 30px 80px rgba(0,0,0,.9);
+  animation: ferman-in .5s cubic-bezier(.175,.885,.32,1.275);
+}
+@keyframes ferman-in { from { opacity:0; transform:scale(.7) rotateX(10deg); } to { opacity:1; transform:scale(1) rotateX(0); } }
+.ferman-box::before, .ferman-box::after {
+  content: '';
+  position: absolute;
+  left: 1.5rem; right: 1.5rem;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--gold), transparent);
+}
+.ferman-box::before { top: 1.25rem; }
+.ferman-box::after  { bottom: 1.25rem; }
+.ferman-seal   { font-size: 3.5rem; margin-bottom: 1rem; filter: drop-shadow(0 0 10px rgba(212,160,23,.5)); }
+.ferman-title  { font-family: 'Cinzel Decorative', serif; font-size: 1.3rem; color: var(--gold); text-shadow: 0 0 20px rgba(212,160,23,.5); margin-bottom: .5rem; }
+.ferman-tuğra  { font-size: .75rem; color: var(--text3); letter-spacing: .2em; text-transform: uppercase; margin-bottom: 1.5rem; }
+.ferman-text   { font-size: 1.05rem; color: var(--text); line-height: 1.8; margin-bottom: 2rem; font-style: italic; }
+.ferman-close  { padding: .7rem 2.5rem; background: transparent; border: 1px solid var(--gold); color: var(--gold); border-radius: 3px; font-family: 'Cinzel', serif; font-size: .85rem; cursor: pointer; transition: all .2s; }
+.ferman-close:hover { background: rgba(212,160,23,.1); }
+
+/* Canlı feed */
+.live-feed { max-height: 280px; overflow-y: auto; font-size: .82rem; }
+.feed-item { padding: .5rem 0; border-bottom: 1px solid rgba(212,160,23,.08); display: flex; gap: .75rem; align-items: flex-start; }
+.feed-time { color: var(--text3); flex-shrink: 0; font-size: .75rem; }
+.feed-msg  { color: var(--text2); line-height: 1.4; }
+.feed-msg b { color: var(--text); }
+
+/* Progress bar */
+.progress { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin: .5rem 0; }
+.progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(to right, var(--gold-d), var(--gold)); transition: width .4s; }
+
+/* Oyuncu arama sonucu */
+.player-result {
+  background: rgba(212,160,23,.06);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+.player-result h4 { font-family: 'Cinzel', serif; color: var(--gold); margin-bottom: .75rem; }
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 768px) {
+  .sidebar { width: 100%; height: auto; position: static; }
+  .app-body { flex-direction: column; }
+  .card-grid { grid-template-columns: 1fr; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-l); border-radius: 3px; }
+
+/* Select */
+select.form-input { cursor: pointer; }
+select.form-input option { background: #1a1508; }
+
+/* Switch toggle */
+.toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: all .3s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  left: 3px; top: 3px;
+  background: var(--text3);
+  border-radius: 50%;
+  transition: all .3s;
+}
+.toggle input:checked + .toggle-slider { background: rgba(212,160,23,.2); border-color: var(--gold); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: var(--gold); box-shadow: 0 0 6px rgba(212,160,23,.6); }
+
+.divider { height: 1px; background: var(--border); margin: 1.25rem 0; }
+</style>
+</head>
+<body>
+
+<!-- ═══ AUTH ═══ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-seal">☽</div>
+    <div class="auth-title">Divan-ı Hümayun</div>
+    <div class="auth-subtitle">Yalnızca Sadrazama mahsus giriş kapısı</div>
+    <input id="auth-email" type="email" class="auth-input" placeholder="E-posta">
+    <input id="auth-pass"  type="password" class="auth-input" placeholder="Şifre" onkeydown="if(event.key==='Enter')adminLogin()">
+    <button class="btn-auth" onclick="adminLogin()">⚜ Divana Giriş</button>
+    <div id="auth-err"></div>
+  </div>
+</div>
+
+<!-- ═══ ADMIN APP ═══ -->
+<div id="admin-app">
+  <!-- Üst Bar -->
+  <header class="imperial-header">
+    <div class="header-brand">
+      <span class="header-brand-icon">☽</span>
+      <div class="header-brand-text">
+        Divan-ı Hümayun
+        <small>Türk İmparatorluğu — Yönetim Merkezi</small>
+      </div>
+    </div>
+    <div class="header-status">
+      <div style="display:flex;align-items:center;gap:.5rem"><div class="status-dot"></div>Canlı</div>
+      <span id="hdr-uid" style="font-size:.75rem;color:var(--text3)"></span>
+      <span id="hdr-time" style="font-size:.78rem"></span>
+      <button class="btn-signout" onclick="adminLogout()">Çıkış ⚜</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="nav-cat">Genel</div>
+      <button class="nav-item active" onclick="nav('dashboard')">  <span class="nav-icon">📊</span>Hazine Durumu</button>
+      <button class="nav-item" onclick="nav('players')">            <span class="nav-icon">👥</span>Oyuncu Ara</button>
+
+      <div class="nav-cat">Ekonomi</div>
+      <button class="nav-item" onclick="nav('inflation')">          <span class="nav-icon">📈</span>Enflasyon</button>
+      <button class="nav-item" onclick="nav('market')">             <span class="nav-icon">🏪</span>Piyasa Müdahale</button>
+      <button class="nav-item" onclick="nav('crisis')">             <span class="nav-icon">💥</span>Kriz Yönetimi</button>
+
+      <div class="nav-cat">Hazine</div>
+      <button class="nav-item" onclick="nav('distribute')">         <span class="nav-icon">💰</span>Ulufe Dağıt</button>
+      <button class="nav-item" onclick="nav('freeze')">             <span class="nav-icon">🔒</span>Hesap Dondur</button>
+      <button class="nav-item" onclick="nav('promo')">              <span class="nav-icon">🎁</span>Promo Kodları</button>
+
+      <div class="nav-cat">Adalet</div>
+      <button class="nav-item" onclick="nav('reports')">            <span class="nav-icon">⚖️</span>Şikayetler</button>
+      <button class="nav-item" onclick="nav('mute')">               <span class="nav-icon">🤫</span>Susturma</button>
+      <button class="nav-item" onclick="nav('ban')">                <span class="nav-icon">⛔</span>Ban Yönetimi</button>
+
+      <div class="nav-cat">Duyuru</div>
+      <button class="nav-item" onclick="nav('ferman')">             <span class="nav-icon">📜</span>İmparatorluk Fermanı</button>
+      <button class="nav-item" onclick="nav('announce')">           <span class="nav-icon">📢</span>Ticker Duyuru</button>
+      <button class="nav-item" onclick="nav('logs')">               <span class="nav-icon">🗂️</span>İşlem Logları</button>
+    </nav>
+
+    <!-- İçerik -->
+    <main class="main-panel">
+
+      <!-- ══ DASHBOARD ══ -->
+      <div id="sec-dashboard" class="panel-section active">
+        <div class="section-title">📊 Hazine Durumu</div>
+        <div class="section-sub">İmparatorluğun anlık ekonomik görünümü</div>
+        <div class="card-grid card-grid-3">
+          <div class="stat-card"><div class="stat-val" id="s-players">—</div><div class="stat-lbl">Toplam Oyuncu</div></div>
+          <div class="stat-card"><div class="stat-val" id="s-online">—</div><div class="stat-lbl">Son 24s Aktif</div></div>
+          <div class="stat-card"><div class="stat-val" id="s-inflation">%0</div><div class="stat-lbl">Enflasyon Oranı</div></div>
+          <div class="stat-card"><div class="stat-val" id="s-bans">—</div><div class="stat-lbl">Banlı Hesap</div></div>
+          <div class="stat-card"><div class="stat-val" id="s-promo">—</div><div class="stat-lbl">Aktif Promo Kodu</div></div>
+          <div class="stat-card"><div class="stat-val" id="s-reports">—</div><div class="stat-lbl">Bekleyen Şikayet</div></div>
+        </div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header">
+              <div class="card-icon ci-gold">📜</div>
+              <div><div class="card-title">Canlı İşlem Akışı</div><div class="card-desc">Son Firebase yazmaları</div></div>
+            </div>
+            <div class="live-feed" id="live-feed"><div style="color:var(--text3);font-size:.82rem">Yükleniyor...</div></div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header">
+              <div class="card-icon ci-teal">📡</div>
+              <div><div class="card-title">Sistem Durumu</div><div class="card-desc">Firebase bağlantı bilgisi</div></div>
+            </div>
+            <div style="font-size:.83rem;color:var(--text2);line-height:2">
+              <div>🔥 Firestore: <span style="color:var(--green-l)" id="fs-status">Bağlanıyor...</span></div>
+              <div>📡 Realtime DB: <span style="color:var(--green-l)" id="rdb-status">Bağlanıyor...</span></div>
+              <div>🔑 Auth: <span style="color:var(--green-l)" id="auth-status">Bağlanıyor...</span></div>
+              <div style="margin-top:.75rem;color:var(--text3);font-size:.75rem">Admin UID: <span id="uid-display">—</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ OYUNCU ARA ══ -->
+      <div id="sec-players" class="panel-section">
+        <div class="section-title">👥 Oyuncu Ara</div>
+        <div class="section-sub">UID veya e-posta ile oyuncu bilgisi getir, bakiye güncelle</div>
+        <div class="panel-card">
+          <div class="card-header"><div class="card-icon ci-gold">🔍</div><div><div class="card-title">Oyuncu Sorgula</div></div></div>
+          <label class="form-label">Oyuncu UID</label>
+          <input id="p-uid" type="text" class="form-input" placeholder="UID girin...">
+          <div class="btn-group">
+            <button class="btn btn-gold" onclick="searchPlayer()">⚜ Oyuncuyu Getir</button>
+          </div>
+          <div id="player-result"></div>
+        </div>
+        <div class="panel-card" style="margin-top:1.5rem">
+          <div class="card-header"><div class="card-icon ci-teal">📋</div><div><div class="card-title">Son Kayıtlar</div><div class="card-desc">Veritabanındaki son 10 oyuncu</div></div></div>
+          <div id="recent-players"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+        </div>
+      </div>
+
+      <!-- ══ ENFLASYON ══ -->
+      <div id="sec-inflation" class="panel-section">
+        <div class="section-title">📈 Enflasyon Kontrolü</div>
+        <div class="section-sub">Piyasa fiyatlarını global çarpanla etkile</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">📊</div><div><div class="card-title">Enflasyon Oranı</div><div class="card-desc">Tüm market fiyatlarını etkiler</div></div></div>
+            <div class="slider-wrap">
+              <label class="form-label">Enflasyon: <span id="inf-pct">%0</span></label>
+              <div class="slider-row">
+                <span style="font-size:.8rem;color:var(--text3)">-50%</span>
+                <input type="range" id="inf-slider" min="-50" max="200" value="0" step="1" oninput="document.getElementById('inf-pct').textContent='%'+this.value">
+                <span style="font-size:.8rem;color:var(--text3)">+200%</span>
+                <div class="slider-val" id="inf-val">%0</div>
+              </div>
+            </div>
+            <div style="font-size:.8rem;color:var(--text2);margin-bottom:1rem">
+              ⚠️ Bu değer <code style="color:var(--teal-l)">ekonomi/ayarlar/enflasyon_orani</code> yoluna yazılır. Tüm oyuncuların gördüğü fiyatlar bu çarpanla hesaplanır.
+            </div>
+            <button class="btn btn-red btn-fw" onclick="confirm2('📈 Enflasyon Ayarla','Enflasyon oranını %'+document.getElementById(\'inf-slider\').value+\' olarak ayarlamak istediğinizden emin misiniz?',setInflation)">📈 Enflasyonu Uygula</button>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-gold">🏛️</div><div><div class="card-title">Anlık Değer</div><div class="card-desc">Firebase'deki mevcut oran</div></div></div>
+            <div id="current-inflation" style="font-family:'Cinzel',serif;font-size:2rem;color:var(--gold);text-align:center;padding:1rem">%0</div>
+            <div style="text-align:center;color:var(--text2);font-size:.8rem">Son güncelleme: <span id="inf-updated">—</span></div>
+            <div class="divider"></div>
+            <button class="btn btn-ghost btn-fw" onclick="confirm2('🔄 Enflasyonu Sıfırla','Enflasyon oranını %0\'a sıfırlamak istiyor musunuz?',resetInflation)">🔄 Sıfırla (%0)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PİYASA MÜDAHALESİ ══ -->
+      <div id="sec-market" class="panel-section">
+        <div class="section-title">🏪 Piyasa Müdahalesi</div>
+        <div class="section-sub">Market fiyatlarına doğrudan müdahale et</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-green">📦</div><div><div class="card-title">Toplu Fiyat Değişimi</div><div class="card-desc">Tüm ürünlerin fiyatlarını tek seferde güncelle</div></div></div>
+            <label class="form-label">Fiyat Çarpanı</label>
+            <div class="slider-wrap">
+              <div class="slider-row">
+                <span style="font-size:.8rem;color:var(--text3)">%10</span>
+                <input type="range" id="price-mult" min="10" max="300" value="100" step="5" oninput="document.getElementById('pm-val').textContent='%'+this.value">
+                <span style="font-size:.8rem;color:var(--text3)">%300</span>
+                <div class="slider-val" id="pm-val">%100</div>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-red" onclick="confirm2('💰 Fiyat +%50','Tüm market ürünlerini %50 zamlamak istediğinizden emin misiniz?',function(){marketIntervene(1.5)})">📈 %50 Zamla</button>
+              <button class="btn btn-teal" onclick="confirm2('📉 Fiyat -%50','Tüm market ürünlerini %50 indirmek istediğinizden emin misiniz?',function(){marketIntervene(0.5)})">📉 %50 İndir</button>
+              <button class="btn btn-gold" onclick="confirm2('⚙️ Özel Çarpan','Seçilen çarpanı uygulamak istiyor musunuz?',function(){marketIntervene(document.getElementById(\'price-mult\').value/100)})">⚙️ Özel Uygula</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-teal">🔧</div><div><div class="card-title">Kategori Müdahalesi</div><div class="card-desc">Belirli kategoriye müdahale</div></div></div>
+            <label class="form-label">Kategori</label>
+            <select id="cat-select" class="form-input">
+              <option value="gida">🌾 Gıda & Baharat</option>
+              <option value="tekstil">🧵 Tekstil & İpek</option>
+              <option value="metal">⚙️ Metal & Demir</option>
+              <option value="hammadde">🪨 Hammadde</option>
+              <option value="hizmet">🏪 Hizmet & Ticaret</option>
+            </select>
+            <label class="form-label">Değişim Oranı (%)</label>
+            <input id="cat-pct" type="number" class="form-input" placeholder="50" value="50" min="-90" max="500">
+            <button class="btn btn-gold btn-fw" onclick="confirm2('🏪 Kategori Müdahalesi','Seçili kategoriye fiyat müdahalesi yapılacak. Onaylıyor musunuz?',categoryIntervene)">⚡ Uygula</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ KRİZ YÖNETİMİ ══ -->
+      <div id="sec-crisis" class="panel-section">
+        <div class="section-title">💥 Kriz Yönetimi</div>
+        <div class="section-sub">Tüm ekonomiyi etkileyen nükleer seçenekler — dikkatli kullan</div>
+        <div class="card-grid">
+          <div class="panel-card" style="border-color:rgba(200,16,46,.3)">
+            <div class="card-header"><div class="card-icon ci-red">💸</div><div><div class="card-title">Devalüasyon — Kriz Çıkart</div><div class="card-desc">Tüm oyuncuların nakit değerini düşür</div></div></div>
+            <label class="form-label">Devalüasyon Oranı</label>
+            <div class="slider-wrap">
+              <div class="slider-row">
+                <span style="font-size:.8rem;color:var(--text3)">%1</span>
+                <input type="range" id="dev-slider" min="1" max="90" value="30" step="1" oninput="document.getElementById('dev-val').textContent='%'+this.value">
+                <span style="font-size:.8rem;color:var(--text3)">%90</span>
+                <div class="slider-val" id="dev-val">%30</div>
+              </div>
+            </div>
+            <div style="font-size:.8rem;color:#f07070;margin:.75rem 0">⚠️ Bu işlem tüm oyuncuların TL bakiyesini seçilen oranda azaltır. Geri alınamaz!</div>
+            <label class="form-label">Kriz Adı / Açıklama</label>
+            <input id="crisis-name" type="text" class="form-input" placeholder="2024 Ekonomik Krizi...">
+            <button class="btn btn-red btn-fw" onclick="confirm2('💥 KRİZ ÇIKAR — DİKKAT!','TÜM oyuncuların nakit değeri %'+document.getElementById(\'dev-slider\').value+\' azalacak. Bu işlem GERİ ALINAMAZ!',triggerCrisis)">💥 Ekonomik Kriz Çıkart</button>
+          </div>
+          <div class="panel-card" style="border-color:rgba(13,115,119,.3)">
+            <div class="card-header"><div class="card-icon ci-green">🌅</div><div><div class="card-title">Ekonomik Canlanma</div><div class="card-desc">Tüm oyunculara bonus ver</div></div></div>
+            <label class="form-label">Canlanma Oranı (nakde bonus %)</label>
+            <div class="slider-wrap">
+              <div class="slider-row">
+                <span style="font-size:.8rem;color:var(--text3)">%1</span>
+                <input type="range" id="boom-slider" min="1" max="200" value="20" step="1" oninput="document.getElementById('boom-val').textContent='%'+this.value">
+                <span style="font-size:.8rem;color:var(--text3)">%200</span>
+                <div class="slider-val" id="boom-val">%20</div>
+              </div>
+            </div>
+            <label class="form-label">Etkinlik Adı</label>
+            <input id="boom-name" type="text" class="form-input" placeholder="Büyük Büyüme Dönemi...">
+            <button class="btn btn-teal btn-fw" onclick="confirm2('🌅 Ekonomik Canlanma','Tüm oyuncuların nakdi %'+document.getElementById(\'boom-slider\').value+\' artacak.',triggerBoom)">🌅 Canlanma Başlat</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ ULUFE DAĞIT ══ -->
+      <div id="sec-distribute" class="panel-section">
+        <div class="section-title">💰 Ulufe Dağıtımı</div>
+        <div class="section-sub">Merkez Bankası müdahalesi — tüm aktif oyunculara veya tek kişiye</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-gold">👥</div><div><div class="card-title">Toplu Ulufe</div><div class="card-desc">Tüm oyunculara eşit dağıtım</div></div></div>
+            <label class="form-label">Kişi Başı Miktar (TL)</label>
+            <input id="uluf-amount" type="number" class="form-input" placeholder="10000" min="1">
+            <label class="form-label">Ulufe Sebebi / Açıklama</label>
+            <input id="uluf-reason" type="text" class="form-input" placeholder="Cülus Bahşişi, Bayram İkramiyesi...">
+            <label class="form-label">Coin (Elmas) Ekle de?</label>
+            <input id="uluf-elmas" type="number" class="form-input" placeholder="0 (opsiyonel)" min="0">
+            <button class="btn btn-gold btn-fw" onclick="confirm2('💰 Toplu Ulufe Dağıt','Tüm oyunculara '+document.getElementById(\'uluf-amount\').value+\' TL dağıtılacak. Onaylıyor musunuz?',distributeAll)">⚜ Tüm Oyunculara Dağıt</button>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-gold">👤</div><div><div class="card-title">Tek Kişiye Hediye</div><div class="card-desc">Belirli bir oyuncuya ödeme</div></div></div>
+            <label class="form-label">Oyuncu UID</label>
+            <input id="single-uid" type="text" class="form-input" placeholder="Oyuncu UID...">
+            <label class="form-label">Miktar (TL)</label>
+            <input id="single-amount" type="number" class="form-input" placeholder="50000" min="1">
+            <label class="form-label">Elmas Ekle</label>
+            <input id="single-elmas" type="number" class="form-input" placeholder="0" min="0">
+            <label class="form-label">Sebep</label>
+            <input id="single-reason" type="text" class="form-input" placeholder="Ödül, Tazminat...">
+            <button class="btn btn-gold btn-fw" onclick="confirm2('💰 Tek Kişiye Hediye','Belirtilen oyuncuya ödeme yapılacak. Onaylıyor musunuz?',giveToPlayer)">⚜ Gönder</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ HESAP DONDUR ══ -->
+      <div id="sec-freeze" class="panel-section">
+        <div class="section-title">🔒 Hesap Dondur / Çöz</div>
+        <div class="section-sub">Şüpheli işlem tespit edilen oyuncuların hesaplarını kısıtla</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">🔒</div><div><div class="card-title">Hesap Dondur</div><div class="card-desc"><code>users/UID/ekonomi/banka_kilit</code> yolunu aktif eder</div></div></div>
+            <label class="form-label">Oyuncu UID</label>
+            <input id="frz-uid" type="text" class="form-input" placeholder="Oyuncu UID...">
+            <label class="form-label">Dondurma Sebebi</label>
+            <input id="frz-reason" type="text" class="form-input" placeholder="Şüpheli hızlı zenginleşme...">
+            <label class="form-label">Süre</label>
+            <select id="frz-dur" class="form-input">
+              <option value="1">1 Saat</option>
+              <option value="24">1 Gün</option>
+              <option value="168" selected>1 Hafta</option>
+              <option value="720">1 Ay</option>
+              <option value="0">Süresiz</option>
+            </select>
+            <div class="btn-group">
+              <button class="btn btn-red" onclick="confirm2('🔒 Hesap Dondur','Bu oyuncunun banka işlemleri dondurulacak. Onaylıyor musunuz?',freezeAccount)">🔒 Dondur</button>
+              <button class="btn btn-teal" onclick="confirm2('🔓 Hesap Çöz','Bu oyuncunun banka kilitini kaldırmak istiyor musunuz?',unfreezeAccount)">🔓 Kilidi Kaldır</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">📋</div><div><div class="card-title">Donmuş Hesaplar</div></div></div>
+            <div id="frozen-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PROMO KODLARI ══ -->
+      <div id="sec-promo" class="panel-section">
+        <div class="section-title">🎁 Promo Kodları</div>
+        <div class="section-sub">Tek kullanımlık veya çok kullanımlık hediye kodları üret</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-purple">✨</div><div><div class="card-title">Yeni Kod Oluştur</div></div></div>
+            <label class="form-label">Kod (boş bırakırsan otomatik üretilir)</label>
+            <input id="promo-code" type="text" class="form-input" placeholder="BAYRAM2024">
+            <label class="form-label">Ödül (TL)</label>
+            <input id="promo-tl" type="number" class="form-input" placeholder="5000" min="0">
+            <label class="form-label">Ödül (Elmas)</label>
+            <input id="promo-elmas" type="number" class="form-input" placeholder="0" min="0">
+            <label class="form-label">Maksimum Kullanım</label>
+            <input id="promo-max" type="number" class="form-input" placeholder="1 (tek kullanım)" min="1" value="1">
+            <label class="form-label">Son Kullanma Tarihi</label>
+            <input id="promo-exp" type="date" class="form-input">
+            <button class="btn btn-gold btn-fw" onclick="createPromoCode()">✨ Kod Oluştur</button>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-teal">📋</div><div><div class="card-title">Aktif Kodlar</div></div></div>
+            <div id="promo-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ ŞİKAYETLER ══ -->
+      <div id="sec-reports" class="panel-section">
+        <div class="section-title">⚖️ Şikayet Yönetimi</div>
+        <div class="section-sub">Oyuncuların şikayet ettiği içerikler — kanıtlarıyla birlikte</div>
+        <div class="panel-card" style="margin-bottom:1.5rem">
+          <div class="card-header"><div class="card-icon ci-red">🔍</div><div><div class="card-title">Filtrele</div></div></div>
+          <div style="display:flex;gap:1rem;flex-wrap:wrap">
+            <select id="rep-filter" class="form-input" style="flex:1;margin:0">
+              <option value="">Tüm Türler</option>
+              <option value="kufur">Küfür / Hakaret</option>
+              <option value="taciz">Taciz</option>
+              <option value="hile">Hile Şüphesi</option>
+              <option value="spam">Spam</option>
+              <option value="diger">Diğer</option>
+            </select>
+            <select id="rep-status" class="form-input" style="flex:1;margin:0">
+              <option value="pending">Bekleyen</option>
+              <option value="resolved">Çözüldü</option>
+              <option value="">Tümü</option>
+            </select>
+            <button class="btn btn-gold" onclick="loadReports()">🔍 Getir</button>
+          </div>
+        </div>
+        <div id="reports-list"><div style="color:var(--text3);font-size:.83rem">Filtrele butonuna bas.</div></div>
+      </div>
+
+      <!-- ══ SUSTURMA ══ -->
+      <div id="sec-mute" class="panel-section">
+        <div class="section-title">🤫 Susturma (Mute)</div>
+        <div class="section-sub">Direkt ban yerine süreli konuşma yasağı</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">🤫</div><div><div class="card-title">Oyuncu Sustur</div></div></div>
+            <label class="form-label">Oyuncu UID</label>
+            <input id="mute-uid" type="text" class="form-input" placeholder="UID...">
+            <label class="form-label">Susturma Süresi</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.85rem">
+              <button class="btn btn-ghost" onclick="setMuteDur(1)">1 Saat</button>
+              <button class="btn btn-ghost" onclick="setMuteDur(6)">6 Saat</button>
+              <button class="btn btn-ghost" onclick="setMuteDur(24)">1 Gün</button>
+              <button class="btn btn-ghost" onclick="setMuteDur(168)">1 Hafta</button>
+            </div>
+            <input id="mute-hours" type="number" class="form-input" placeholder="Özel saat (ör. 48)" min="1">
+            <label class="form-label">Sebep</label>
+            <input id="mute-reason" type="text" class="form-input" placeholder="Küfür içerikli mesaj...">
+            <div class="btn-group">
+              <button class="btn btn-red" onclick="confirm2('🤫 Sustur','Bu oyuncu susturulacak. Onaylıyor musunuz?',mutePlayer)">🤫 Sustur</button>
+              <button class="btn btn-teal" onclick="confirm2('🔊 Sesi Aç','Bu oyuncunun susturmasını kaldırmak istiyor musunuz?',unmutePlayer)">🔊 Sesi Aç</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">📋</div><div><div class="card-title">Susturulan Oyuncular</div></div></div>
+            <div id="muted-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ BAN ══ -->
+      <div id="sec-ban" class="panel-section">
+        <div class="section-title">⛔ Ban Yönetimi</div>
+        <div class="section-sub">Kalıcı ve geçici hesap yasaklamaları</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">⛔</div><div><div class="card-title">Oyuncu Banla</div></div></div>
+            <label class="form-label">Oyuncu UID</label>
+            <input id="ban-uid" type="text" class="form-input" placeholder="Banlanacak oyuncunun UID'si...">
+            <label class="form-label">Ban Türü</label>
+            <select id="ban-type" class="form-input">
+              <option value="temporary">Geçici Ban</option>
+              <option value="permanent">Kalıcı Ban</option>
+            </select>
+            <div id="ban-dur-wrap">
+              <label class="form-label">Süre</label>
+              <select id="ban-duration" class="form-input">
+                <option value="24">1 Gün</option>
+                <option value="168">1 Hafta</option>
+                <option value="720">1 Ay</option>
+                <option value="2160">3 Ay</option>
+              </select>
+            </div>
+            <label class="form-label">Ban Sebebi</label>
+            <textarea id="ban-reason" class="form-input" placeholder="Detaylı sebep yazın..."></textarea>
+            <div class="btn-group">
+              <button class="btn btn-red" onclick="confirm2('⛔ BANLA','Bu oyuncu banlanacak! Onaylıyor musunuz?',banPlayer)">⛔ Banla</button>
+              <button class="btn btn-teal" onclick="confirm2('✅ Banı Kaldır','Bu oyuncunun banını kaldırmak istiyor musunuz?',unbanPlayer)">✅ Banı Kaldır</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-red">📋</div><div><div class="card-title">Banlı Oyuncular</div></div></div>
+            <div id="ban-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ FERMAN ══ -->
+      <div id="sec-ferman" class="panel-section">
+        <div class="section-title">📜 İmparatorluk Fermanı</div>
+        <div class="section-sub">Tüm oyuncuların ekranına büyük popup ile duyuru gönder</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-gold">📜</div><div><div class="card-title">Ferman Yaz</div></div></div>
+            <label class="form-label">Ferman Başlığı</label>
+            <input id="ferm-title" type="text" class="form-input" placeholder="İmparatorluk Fermanı — Vergi Tatili">
+            <label class="form-label">Ferman Metni</label>
+            <textarea id="ferm-text" class="form-input" style="min-height:120px" placeholder="Halkımıza duyurulur ki..."></textarea>
+            <label class="form-label">Tuğra / İkon</label>
+            <input id="ferm-icon" type="text" class="form-input" placeholder="📜 (emoji)" value="📜">
+            <label class="form-label">Aktif mi?</label>
+            <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.85rem">
+              <label class="toggle"><input type="checkbox" id="ferm-active" checked><div class="toggle-slider"></div></label>
+              <span style="color:var(--text2);font-size:.85rem">Fermanı tüm oyunculara göster</span>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-gold" onclick="previewFerman()">👁️ Önizle</button>
+              <button class="btn btn-red" onclick="confirm2('📜 Ferman Yayınla','Bu ferman tüm oyuncuların ekranına çıkacak. Yayınlamak istiyor musunuz?',publishFerman)">📜 Yayınla</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-teal">📋</div><div><div class="card-title">Mevcut Fermanlar</div></div></div>
+            <div id="ferman-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ DUYURU ══ -->
+      <div id="sec-announce" class="panel-section">
+        <div class="section-title">📢 Ticker Duyurusu</div>
+        <div class="section-sub">Üstteki kayan yazı bandına duyuru ekle</div>
+        <div class="card-grid">
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-gold">📢</div><div><div class="card-title">Yeni Duyuru</div></div></div>
+            <label class="form-label">Duyuru Metni</label>
+            <textarea id="ann-text" class="form-input" placeholder="📢 İmparatorluk genelinde vergi tatili ilan edilmiştir..."></textarea>
+            <label class="form-label">Öncelik</label>
+            <select id="ann-priority" class="form-input">
+              <option value="normal">Normal</option>
+              <option value="high">Yüksek (Kırmızı)</option>
+              <option value="alert">Acil (Yanıp söner)</option>
+            </select>
+            <button class="btn btn-gold btn-fw" onclick="confirm2('📢 Duyuru Yayınla','Bu duyuru tüm oyunculara gösterilecek.',publishAnnouncement)">📢 Yayınla</button>
+          </div>
+          <div class="panel-card">
+            <div class="card-header"><div class="card-icon ci-teal">📋</div><div><div class="card-title">Aktif Duyurular</div></div></div>
+            <div id="ann-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ LOGLAR ══ -->
+      <div id="sec-logs" class="panel-section">
+        <div class="section-title">🗂️ İşlem Logları</div>
+        <div class="section-sub">Admin tarafından yapılan tüm işlemler</div>
+        <div class="panel-card">
+          <div id="admin-logs-list"><div style="color:var(--text3);font-size:.83rem">Yükleniyor...</div></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Onay Modal -->
+<div id="confirm-modal">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="cm-icon">⚠️</div>
+    <div class="confirm-title" id="cm-title">Emin misiniz?</div>
+    <div class="confirm-msg" id="cm-msg"></div>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Vazgeç</button>
+      <button class="btn btn-red" id="cm-ok">Onaylıyorum</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ferman Overlay -->
+<div id="ferman-overlay">
+  <div class="ferman-box">
+    <div class="ferman-seal" id="fp-icon">📜</div>
+    <div class="ferman-title" id="fp-title">İmparatorluk Fermanı</div>
+    <div class="ferman-tuğra">Sadrazam Mührü Onaylıdır</div>
+    <div class="ferman-text" id="fp-text"></div>
+    <button class="ferman-close" onclick="document.getElementById('ferman-overlay').classList.remove('open')">Anlaşıldı — Fermana Uyulacaktır</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast-wrap"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// FIREBASE BAŞLATMA
+// ═══════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyB5pl78DRao2SmUWsMYMSZ6YbfX4rtRNdc",
+  authDomain:        "gamezone-e11b0.firebaseapp.com",
+  databaseURL:       "https://gamezone-e11b0-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "gamezone-e11b0",
+  storageBucket:     "gamezone-e11b0.firebasestorage.app",
+  messagingSenderId: "775694460272",
+  appId:             "1:775694460272:web:7e5fd5691df9d8399d5bb5"
+};
+
+const ADMIN_UID = "IEqctPKFy6bL5u9ew6kIm8W6CsF2";
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth  = firebase.auth();
+const db    = firebase.database();      // Realtime Database
+const fdb   = firebase.firestore();     // Firestore
+
+// ═══ AUTH ═══
+auth.onAuthStateChanged(function(user) {
+  if (user && user.uid === ADMIN_UID) {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('admin-app').style.display   = 'block';
+    document.getElementById('hdr-uid').textContent       = 'UID: ' + user.uid.slice(0,10) + '...';
+    document.getElementById('uid-display').textContent   = user.uid;
+    document.getElementById('fs-status').textContent     = 'Bağlı ✓';
+    document.getElementById('rdb-status').textContent    = 'Bağlı ✓';
+    document.getElementById('auth-status').textContent   = 'Doğrulandı ✓';
+    initDashboard();
+    startClock();
+  } else if (user) {
+    auth.signOut();
+    showAuthErr('Bu hesabın yönetici yetkisi yok.');
+  }
+});
+
+function adminLogin() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass  = document.getElementById('auth-pass').value;
+  if (!email || !pass) return showAuthErr('E-posta ve şifre gerekli.');
+  showAuthErr('');
+  auth.signInWithEmailAndPassword(email, pass)
+    .catch(function(err) {
+      const msgs = {
+        'auth/wrong-password':      'E-posta veya şifre hatalı.',
+        'auth/invalid-credential':  'E-posta veya şifre hatalı.',
+        'auth/user-not-found':      'Kullanıcı bulunamadı.',
+        'auth/invalid-email':       'Geçersiz e-posta.',
+        'auth/too-many-requests':   'Çok fazla deneme. Biraz bekleyin.'
+      };
+      showAuthErr(msgs[err.code] || err.message);
+    });
+}
+
+function adminLogout() {
+  auth.signOut().then(function() {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('admin-app').style.display   = 'none';
+  });
+}
+
+function showAuthErr(msg) {
+  document.getElementById('auth-err').textContent = msg;
+}
+
+// ═══ SAAT ═══
+function startClock() {
+  setInterval(function() {
+    document.getElementById('hdr-time').textContent = new Date().toLocaleTimeString('tr-TR');
+  }, 1000);
+}
+
+// ═══ NAVİGASYON ═══
+function nav(section) {
+  document.querySelectorAll('.panel-section').forEach(function(s) { s.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  var el = document.getElementById('sec-' + section);
+  if (el) el.classList.add('active');
+  event.currentTarget.classList.add('active');
+  // Lazy load
+  if (section === 'ban')       loadBanList();
+  if (section === 'mute')      loadMuteList();
+  if (section === 'freeze')    loadFreezeList();
+  if (section === 'promo')     loadPromoList();
+  if (section === 'ferman')    loadFermanList();
+  if (section === 'announce')  loadAnnList();
+  if (section === 'logs')      loadAdminLogs();
+  if (section === 'players')   loadRecentPlayers();
+  if (section === 'inflation') loadInflation();
+}
+
+// ═══ DASHBOARD ═══
+function initDashboard() {
+  // Oyuncu sayısı
+  fdb.collection('users').get().then(function(snap) {
+    document.getElementById('s-players').textContent = snap.size;
+    var bans = snap.docs.filter(function(d) { return d.data().isBanned; }).length;
+    document.getElementById('s-bans').textContent = bans;
+  });
+  // Promo sayısı
+  db.ref('promo_codes').once('value').then(function(snap) {
+    document.getElementById('s-promo').textContent = snap.numChildren();
+  });
+  // Şikayet sayısı
+  db.ref('reports').orderByChild('status').equalTo('pending').once('value').then(function(snap) {
+    document.getElementById('s-reports').textContent = snap.numChildren();
+  });
+  // Enflasyon
+  db.ref('ekonomi/ayarlar/enflasyon_orani').on('value', function(snap) {
+    var val = snap.val() || 0;
+    document.getElementById('s-inflation').textContent = '%' + val;
+    document.getElementById('current-inflation').textContent = '%' + val;
+  });
+  // Aktif oyuncular (son 24s)
+  var since = Date.now() - 86400000;
+  fdb.collection('users').where('stats.lastLogin', '>', new Date(since).toISOString()).get()
+    .then(function(snap) { document.getElementById('s-online').textContent = snap.size; })
+    .catch(function() { document.getElementById('s-online').textContent = '—'; });
+  // Canlı feed
+  loadLiveFeed();
+}
+
+function loadLiveFeed() {
+  var feed = document.getElementById('live-feed');
+  db.ref('admin_log').limitToLast(10).on('value', function(snap) {
+    var items = [];
+    snap.forEach(function(child) { items.unshift(child.val()); });
+    feed.innerHTML = items.length ? items.map(function(item) {
+      return '<div class="feed-item"><span class="feed-time">'+new Date(item.ts).toLocaleTimeString('tr-TR')+'</span><span class="feed-msg">'+item.msg+'</span></div>';
+    }).join('') : '<div style="color:var(--text3);font-size:.82rem">Henüz işlem yok.</div>';
+  });
+}
+
+// ═══ ADMIN LOG YARDIMCISI ═══
+function adminLog(msg) {
+  db.ref('admin_log').push({ msg: msg, ts: Date.now(), admin: ADMIN_UID });
+}
+
+// ═══ ENFLASYON ═══
+function loadInflation() {
+  db.ref('ekonomi/ayarlar/enflasyon_orani').once('value').then(function(snap) {
+    var val = snap.val() || 0;
+    document.getElementById('inf-slider').value = val;
+    document.getElementById('inf-pct').textContent = '%' + val;
+    document.getElementById('current-inflation').textContent = '%' + val;
+  });
+  db.ref('ekonomi/ayarlar/enflasyon_updated').once('value').then(function(snap) {
+    if (snap.val()) document.getElementById('inf-updated').textContent = new Date(snap.val()).toLocaleString('tr-TR');
+  });
+}
+
+function setInflation() {
+  var val = parseInt(document.getElementById('inf-slider').value);
+  db.ref('ekonomi/ayarlar').update({ enflasyon_orani: val, enflasyon_updated: Date.now() })
+    .then(function() {
+      toast('Enflasyon oranı %' + val + ' olarak ayarlandı.', 'gold');
+      adminLog('📈 Enflasyon oranı %' + val + ' olarak ayarlandı.');
+    });
+}
+
+function resetInflation() {
+  db.ref('ekonomi/ayarlar').update({ enflasyon_orani: 0, enflasyon_updated: Date.now() })
+    .then(function() { toast('Enflasyon %0\'a sıfırlandı.', 'success'); adminLog('🔄 Enflasyon sıfırlandı.'); });
+}
+
+// ═══ PİYASA MÜDAHALESİ ═══
+function marketIntervene(multiplier) {
+  db.ref('market/urunler').once('value').then(function(snap) {
+    if (!snap.exists()) {
+      db.ref('ekonomi/ayarlar/fiyat_carpan').set(multiplier);
+      db.ref('ekonomi/ayarlar/piyasa_mudahale_ts').set(Date.now());
+      toast('Piyasa çarpanı ' + multiplier + 'x olarak ayarlandı.', 'gold');
+      adminLog('🏪 Piyasa çarpanı x' + multiplier + ' uygulandı.');
+      return;
+    }
+    var updates = {};
+    snap.forEach(function(child) {
+      var item = child.val();
+      if (item.fiyat) updates['market/urunler/' + child.key + '/fiyat'] = Math.round(item.fiyat * multiplier);
+    });
+    return db.ref().update(updates);
+  }).then(function() {
+    toast('Piyasa fiyatları ' + (multiplier * 100).toFixed(0) + '% seviyesine güncellendi.', 'gold');
+    adminLog('🏪 Piyasa x' + multiplier + ' çarpanı uygulandı.');
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function categoryIntervene() {
+  var cat = document.getElementById('cat-select').value;
+  var pct = parseFloat(document.getElementById('cat-pct').value) / 100;
+  var mult = 1 + pct;
+  db.ref('ekonomi/ayarlar/kategori_carpan/' + cat).set({ carpan: mult, ts: Date.now() })
+    .then(function() {
+      toast(cat + ' kategorisi ' + (pct * 100).toFixed(0) + '% değiştirildi.', 'gold');
+      adminLog('🏪 ' + cat + ' kategorisi x' + mult.toFixed(2) + ' güncellendi.');
+    });
+}
+
+// ═══ KRİZ ═══
+function triggerCrisis() {
+  var rate    = parseInt(document.getElementById('dev-slider').value) / 100;
+  var name    = document.getElementById('crisis-name').value || 'Ekonomik Kriz';
+  var mult    = 1 - rate;
+  // Tüm kullanıcıların TL'sini azalt
+  fdb.collection('users').get().then(function(snap) {
+    var batch = fdb.batch();
+    snap.docs.forEach(function(doc) {
+      var tl = (doc.data().wallet && doc.data().wallet.tl) || 0;
+      batch.update(doc.ref, { 'wallet.tl': Math.max(0, Math.round(tl * mult)) });
+    });
+    return batch.commit();
+  }).then(function() {
+    db.ref('ekonomi/kriz').set({ ad: name, oran: rate, ts: Date.now(), aktif: true });
+    db.ref('genel_veriler/duyuru').set({ mesaj: '💥 ' + name + ' — Tüm nakitler %' + (rate*100).toFixed(0) + ' değer kaybetti!', ts: Date.now(), priority: 'alert' });
+    toast('💥 Kriz uygulandı! Tüm nakitler %' + (rate * 100) + ' azaldı.', 'error');
+    adminLog('💥 KRİZ: ' + name + ' — %' + (rate*100) + ' devalüasyon uygulandı.');
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function triggerBoom() {
+  var rate = parseInt(document.getElementById('boom-slider').value) / 100;
+  var name = document.getElementById('boom-name').value || 'Ekonomik Canlanma';
+  var mult = 1 + rate;
+  fdb.collection('users').get().then(function(snap) {
+    var batch = fdb.batch();
+    snap.docs.forEach(function(doc) {
+      var tl = (doc.data().wallet && doc.data().wallet.tl) || 0;
+      batch.update(doc.ref, { 'wallet.tl': Math.round(tl * mult) });
+    });
+    return batch.commit();
+  }).then(function() {
+    db.ref('genel_veriler/duyuru').set({ mesaj: '🌅 ' + name + ' — Nakitler %' + (rate*100).toFixed(0) + ' arttı!', ts: Date.now(), priority: 'high' });
+    toast('🌅 Canlanma uygulandı! Tüm nakitler %' + (rate * 100) + ' arttı.', 'success');
+    adminLog('🌅 CANLANMA: ' + name + ' — %' + (rate*100) + ' artış.');
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+// ═══ ULUFE ═══
+function distributeAll() {
+  var amount = parseInt(document.getElementById('uluf-amount').value);
+  var reason = document.getElementById('uluf-reason').value || 'Ulufe';
+  var elmas  = parseInt(document.getElementById('uluf-elmas').value) || 0;
+  if (!amount || amount < 1) return toast('Geçerli miktar girin.', 'error');
+
+  fdb.collection('users').get().then(function(snap) {
+    var batch = fdb.batch();
+    snap.docs.forEach(function(doc) {
+      var data = doc.data();
+      var updates = { 'wallet.tl': ((data.wallet && data.wallet.tl) || 0) + amount };
+      if (elmas > 0) updates['profile.elmas'] = ((data.profile && data.profile.elmas) || 0) + elmas;
+      batch.update(doc.ref, updates);
+    });
+    return batch.commit().then(function() { return snap.size; });
+  }).then(function(count) {
+    db.ref('genel_veriler/duyuru').set({ mesaj: '💰 ' + reason + ' — Her oyuncuya ' + amount.toLocaleString('tr-TR') + ' TL' + (elmas?' + '+elmas+'💎':'') + ' hediye edildi!', ts: Date.now(), priority: 'high' });
+    toast('💰 ' + count + ' oyuncuya ' + amount.toLocaleString('tr-TR') + ' TL dağıtıldı!', 'gold');
+    adminLog('💰 ULUFE: ' + count + ' oyuncuya ' + amount + ' TL — ' + reason);
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function giveToPlayer() {
+  var uid    = document.getElementById('single-uid').value.trim();
+  var amount = parseInt(document.getElementById('single-amount').value);
+  var elmas  = parseInt(document.getElementById('single-elmas').value) || 0;
+  var reason = document.getElementById('single-reason').value || 'Admin hediyesi';
+  if (!uid)              return toast('UID girin.', 'error');
+  if (!amount || amount < 1) return toast('Geçerli miktar girin.', 'error');
+
+  fdb.collection('users').doc(uid).get().then(function(snap) {
+    if (!snap.exists()) throw new Error('Oyuncu bulunamadı.');
+    var data    = snap.data();
+    var updates = { 'wallet.tl': ((data.wallet && data.wallet.tl) || 0) + amount };
+    if (elmas > 0) updates['profile.elmas'] = ((data.profile && data.profile.elmas) || 0) + elmas;
+    return snap.ref.update(updates);
+  }).then(function() {
+    toast('✅ ' + amount.toLocaleString('tr-TR') + ' TL gönderildi! Sebep: ' + reason, 'gold');
+    adminLog('💸 Tek hediye: ' + uid.slice(0,8) + '... → ' + amount + ' TL — ' + reason);
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+// ═══ HESAP DONDUR ═══
+function freezeAccount() {
+  var uid    = document.getElementById('frz-uid').value.trim();
+  var reason = document.getElementById('frz-reason').value || 'Admin kararı';
+  var dur    = parseInt(document.getElementById('frz-dur').value);
+  var until  = dur > 0 ? Date.now() + dur * 3600000 : 0;
+  if (!uid) return toast('UID girin.', 'error');
+  fdb.collection('users').doc(uid).update({
+    'ekonomi.banka_kilit': true,
+    'ekonomi.banka_kilit_until': until,
+    'ekonomi.banka_kilit_reason': reason,
+    'ekonomi.banka_kilit_ts': Date.now()
+  }).then(function() {
+    toast('🔒 Hesap donduruldu.', 'error');
+    adminLog('🔒 Hesap donduruldu: ' + uid.slice(0,8) + '... Sebep: ' + reason);
+    loadFreezeList();
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function unfreezeAccount() {
+  var uid = document.getElementById('frz-uid').value.trim();
+  if (!uid) return toast('UID girin.', 'error');
+  fdb.collection('users').doc(uid).update({ 'ekonomi.banka_kilit': false })
+    .then(function() { toast('🔓 Hesap kilidi kaldırıldı.', 'success'); adminLog('🔓 Hesap çözüldü: ' + uid.slice(0,8)); loadFreezeList(); });
+}
+
+function loadFreezeList() {
+  var el = document.getElementById('frozen-list');
+  fdb.collection('users').where('ekonomi.banka_kilit', '==', true).get()
+    .then(function(snap) {
+      if (!snap.size) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Donmuş hesap yok.</div>'; return; }
+      el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>UID</th><th>Sebep</th><th>İşlem</th></tr></thead><tbody>' +
+        snap.docs.map(function(doc) {
+          var d = doc.data();
+          var reason = (d.ekonomi && d.ekonomi.banka_kilit_reason) || '—';
+          return '<tr><td><span class="badge badge-red">'+doc.id.slice(0,10)+'...</span></td><td>'+reason+'</td><td><button class="btn btn-sm btn-teal" onclick="quickUnfreeze(\''+doc.id+'\')">Çöz</button></td></tr>';
+        }).join('') + '</tbody></table></div>';
+    });
+}
+
+function quickUnfreeze(uid) {
+  fdb.collection('users').doc(uid).update({ 'ekonomi.banka_kilit': false })
+    .then(function() { toast('🔓 Kilitler kaldırıldı.', 'success'); loadFreezeList(); });
+}
+
+// ═══ PROMO KODLARI ═══
+function createPromoCode() {
+  var code  = document.getElementById('promo-code').value.trim().toUpperCase() || 'TI' + Math.random().toString(36).slice(2,8).toUpperCase();
+  var tl    = parseInt(document.getElementById('promo-tl').value)    || 0;
+  var elmas = parseInt(document.getElementById('promo-elmas').value) || 0;
+  var max   = parseInt(document.getElementById('promo-max').value)   || 1;
+  var exp   = document.getElementById('promo-exp').value;
+  if (!tl && !elmas) return toast('En az TL veya elmas ödülü girin.', 'error');
+  db.ref('promo_codes/' + code).set({
+    tl: tl, elmas: elmas, maxUse: max, usedCount: 0,
+    expiresAt: exp ? new Date(exp).getTime() : 0,
+    createdAt: Date.now(), createdBy: ADMIN_UID, active: true
+  }).then(function() {
+    toast('✨ Kod oluşturuldu: ' + code, 'gold');
+    adminLog('✨ Promo kodu: ' + code + ' (' + tl + ' TL, ' + elmas + ' 💎)');
+    document.getElementById('promo-code').value = '';
+    loadPromoList();
+  });
+}
+
+function loadPromoList() {
+  var el = document.getElementById('promo-list');
+  db.ref('promo_codes').once('value').then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Kod yok.</div>'; return; }
+    var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Kod</th><th>Ödül</th><th>Kullanım</th><th></th></tr></thead><tbody>';
+    snap.forEach(function(child) {
+      var d = child.val();
+      var expired = d.expiresAt && d.expiresAt < Date.now();
+      html += '<tr><td><b style="color:var(--gold)">' + child.key + '</b>' + (expired ? ' <span class="badge badge-red">Süresi doldu</span>' : '') + '</td>';
+      html += '<td>' + (d.tl ? d.tl.toLocaleString('tr-TR') + ' TL' : '') + (d.elmas ? ' + ' + d.elmas + '💎' : '') + '</td>';
+      html += '<td>' + d.usedCount + '/' + d.maxUse + '</td>';
+      html += '<td><button class="btn btn-sm btn-red" onclick="deletePromo(\''+child.key+'\')">Sil</button></td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table></div>';
+  });
+}
+
+function deletePromo(code) {
+  db.ref('promo_codes/' + code).remove().then(function() { toast('Kod silindi.', 'info'); loadPromoList(); });
+}
+
+// ═══ ŞİKAYETLER ═══
+function loadReports() {
+  var type   = document.getElementById('rep-filter').value;
+  var status = document.getElementById('rep-status').value;
+  var el     = document.getElementById('reports-list');
+  el.innerHTML = '<div style="color:var(--text3)">Yükleniyor...</div>';
+  var ref = db.ref('reports');
+  if (status) ref = ref.orderByChild('status').equalTo(status);
+  ref.limitToLast(30).once('value').then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Şikayet yok.</div>'; return; }
+    var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Tür</th><th>Raporlayan</th><th>Hedef</th><th>Mesaj/Kanıt</th><th>Durum</th><th>İşlem</th></tr></thead><tbody>';
+    snap.forEach(function(child) {
+      var d = child.val();
+      if (type && d.type !== type) return;
+      html += '<tr>';
+      html += '<td><span class="badge badge-red">' + (d.type || '—') + '</span></td>';
+      html += '<td style="font-size:.78rem">' + (d.reporterUid || '—').slice(0,8) + '...</td>';
+      html += '<td style="font-size:.78rem">' + (d.targetUid  || '—').slice(0,8) + '...</td>';
+      html += '<td style="max-width:200px;font-size:.8rem;word-break:break-word">' + (d.message || '—') + '</td>';
+      html += '<td><span class="badge ' + (d.status === 'pending' ? 'badge-gold' : 'badge-green') + '">' + (d.status || 'pending') + '</span></td>';
+      html += '<td><button class="btn btn-sm btn-teal" onclick="resolveReport(\''+child.key+'\')">✅ Çözüldü</button> ';
+      html += '<button class="btn btn-sm btn-red" onclick="banFromReport(\''+d.targetUid+'\')">⛔ Ban</button></td>';
+      html += '</tr>';
+    });
+    el.innerHTML = html + '</tbody></table></div>';
+  });
+}
+
+function resolveReport(key) {
+  db.ref('reports/' + key).update({ status: 'resolved', resolvedAt: Date.now(), resolvedBy: ADMIN_UID })
+    .then(function() { toast('Şikayet çözüldü olarak işaretlendi.', 'success'); loadReports(); });
+}
+
+function banFromReport(uid) {
+  if (!uid) return;
+  document.getElementById('ban-uid').value = uid;
+  nav('ban');
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  toast('Ban bölümüne yönlendirildiniz. Detayları doldurun.', 'info');
+}
+
+// ═══ SUSTURMA ═══
+var _muteDur = 24;
+function setMuteDur(h) { _muteDur = h; document.getElementById('mute-hours').value = h; }
+
+function mutePlayer() {
+  var uid    = document.getElementById('mute-uid').value.trim();
+  var hours  = parseInt(document.getElementById('mute-hours').value) || _muteDur;
+  var reason = document.getElementById('mute-reason').value || 'Admin kararı';
+  if (!uid) return toast('UID girin.', 'error');
+  var until = Date.now() + hours * 3600000;
+  fdb.collection('users').doc(uid).update({ 'durum.muted': true, 'durum.mute_until': until, 'durum.mute_reason': reason })
+    .then(function() { toast('🤫 Oyuncu ' + hours + ' saat susturuldu.', 'error'); adminLog('🤫 Susturma: '+uid.slice(0,8)+' — '+hours+'sa — '+reason); loadMuteList(); })
+    .catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function unmutePlayer() {
+  var uid = document.getElementById('mute-uid').value.trim();
+  if (!uid) return toast('UID girin.', 'error');
+  fdb.collection('users').doc(uid).update({ 'durum.muted': false })
+    .then(function() { toast('🔊 Susturma kaldırıldı.', 'success'); adminLog('🔊 Sesi açıldı: '+uid.slice(0,8)); loadMuteList(); });
+}
+
+function loadMuteList() {
+  var el = document.getElementById('muted-list');
+  fdb.collection('users').where('durum.muted', '==', true).get()
+    .then(function(snap) {
+      if (!snap.size) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Susturulan oyuncu yok.</div>'; return; }
+      el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>UID</th><th>Sebep</th><th>Bitiş</th><th></th></tr></thead><tbody>' +
+        snap.docs.map(function(doc) {
+          var d = doc.data();
+          var until = d.durum && d.durum.mute_until ? new Date(d.durum.mute_until).toLocaleString('tr-TR') : '—';
+          var reason = (d.durum && d.durum.mute_reason) || '—';
+          return '<tr><td>'+doc.id.slice(0,10)+'...</td><td>'+reason+'</td><td style="font-size:.78rem">'+until+'</td><td><button class="btn btn-sm btn-teal" onclick="quickUnmute(\''+doc.id+'\')">Aç</button></td></tr>';
+        }).join('') + '</tbody></table></div>';
+    });
+}
+
+function quickUnmute(uid) {
+  fdb.collection('users').doc(uid).update({ 'durum.muted': false }).then(function() { toast('Sesi açıldı.', 'success'); loadMuteList(); });
+}
+
+// ═══ BAN ═══
+function banPlayer() {
+  var uid      = document.getElementById('ban-uid').value.trim();
+  var type     = document.getElementById('ban-type').value;
+  var duration = parseInt(document.getElementById('ban-duration').value);
+  var reason   = document.getElementById('ban-reason').value || 'Admin kararı';
+  if (!uid) return toast('UID girin.', 'error');
+  var until = type === 'permanent' ? 0 : Date.now() + duration * 3600000;
+  fdb.collection('users').doc(uid).update({
+    isBanned: true, 'durum.isBanned': true,
+    'durum.ban_type': type, 'durum.ban_until': until,
+    'durum.ban_reason': reason, 'durum.ban_ts': Date.now()
+  }).then(function() {
+    toast('⛔ Oyuncu banlandı.', 'error');
+    adminLog('⛔ BAN: ' + uid.slice(0,8) + ' — ' + type + ' — ' + reason);
+    loadBanList();
+  }).catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function unbanPlayer() {
+  var uid = document.getElementById('ban-uid').value.trim();
+  if (!uid) return toast('UID girin.', 'error');
+  fdb.collection('users').doc(uid).update({ isBanned: false, 'durum.isBanned': false })
+    .then(function() { toast('✅ Ban kaldırıldı.', 'success'); adminLog('✅ Ban kaldırıldı: '+uid.slice(0,8)); loadBanList(); });
+}
+
+function loadBanList() {
+  var el = document.getElementById('ban-list');
+  fdb.collection('users').where('isBanned', '==', true).get().then(function(snap) {
+    if (!snap.size) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Banlı oyuncu yok.</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>UID</th><th>Tür</th><th>Sebep</th><th></th></tr></thead><tbody>' +
+      snap.docs.map(function(doc) {
+        var d = doc.data();
+        var type   = (d.durum && d.durum.ban_type)   || 'unknown';
+        var reason = (d.durum && d.durum.ban_reason) || '—';
+        return '<tr><td>'+doc.id.slice(0,10)+'...</td><td><span class="badge '+(type==='permanent'?'badge-red':'badge-gold')+'">'+type+'</span></td><td>'+reason+'</td><td><button class="btn btn-sm btn-teal" onclick="quickUnban(\''+doc.id+'\')">Kaldır</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+}
+
+function quickUnban(uid) {
+  fdb.collection('users').doc(uid).update({ isBanned: false, 'durum.isBanned': false })
+    .then(function() { toast('Ban kaldırıldı.', 'success'); loadBanList(); });
+}
+
+// ═══ FERMAN ═══
+function previewFerman() {
+  var title = document.getElementById('ferm-title').value || 'İmparatorluk Fermanı';
+  var text  = document.getElementById('ferm-text').value  || 'Ferman metni...';
+  var icon  = document.getElementById('ferm-icon').value  || '📜';
+  document.getElementById('fp-icon').textContent  = icon;
+  document.getElementById('fp-title').textContent = title;
+  document.getElementById('fp-text').textContent  = text;
+  document.getElementById('ferman-overlay').classList.add('open');
+}
+
+function publishFerman() {
+  var title  = document.getElementById('ferm-title').value || 'İmparatorluk Fermanı';
+  var text   = document.getElementById('ferm-text').value;
+  var icon   = document.getElementById('ferm-icon').value  || '📜';
+  var active = document.getElementById('ferm-active').checked;
+  if (!text) return toast('Ferman metni boş olamaz.', 'error');
+  db.ref('genel_veriler/ferman').set({ title, text, icon, active, ts: Date.now(), by: ADMIN_UID })
+    .then(function() {
+      toast('📜 Ferman yayınlandı!', 'gold');
+      adminLog('📜 Ferman yayınlandı: ' + title);
+      loadFermanList();
+    });
+}
+
+function loadFermanList() {
+  var el = document.getElementById('ferman-list');
+  db.ref('genel_veriler/ferman').once('value').then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Yayında ferman yok.</div>'; return; }
+    var d = snap.val();
+    el.innerHTML = '<div class="panel-card" style="border-color:var(--border-l)">' +
+      '<div style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:.5rem">' + (d.icon||'📜') + ' ' + (d.title||'') + '</div>' +
+      '<div style="color:var(--text2);font-size:.85rem;margin-bottom:.75rem">' + (d.text||'') + '</div>' +
+      '<div style="font-size:.75rem;color:var(--text3)">Yayın: ' + (d.active ? '<span style="color:var(--green-l)">Aktif</span>' : '<span style="color:var(--text3)">Pasif</span>') + '</div>' +
+      '<div class="btn-group"><button class="btn btn-sm btn-red" onclick="removeFerman()">🗑️ Kaldır</button></div>' +
+      '</div>';
+  });
+}
+
+function removeFerman() {
+  db.ref('genel_veriler/ferman').remove().then(function() { toast('Ferman kaldırıldı.', 'info'); loadFermanList(); adminLog('🗑️ Ferman kaldırıldı.'); });
+}
+
+// ═══ DUYURU ═══
+function publishAnnouncement() {
+  var text     = document.getElementById('ann-text').value;
+  var priority = document.getElementById('ann-priority').value;
+  if (!text) return toast('Duyuru metni girin.', 'error');
+  var key = db.ref('genel_veriler/duyuru_list').push().key;
+  db.ref('genel_veriler/duyuru_list/' + key).set({ mesaj: text, priority, ts: Date.now(), by: ADMIN_UID, active: true })
+    .then(function() {
+      // Ana duyuru yolunu da güncelle (oyun bunu okur)
+      db.ref('genel_veriler/duyuru').set({ mesaj: text, priority, ts: Date.now() });
+      toast('📢 Duyuru yayınlandı!', 'gold');
+      adminLog('📢 Duyuru: ' + text.slice(0,50));
+      document.getElementById('ann-text').value = '';
+      loadAnnList();
+    });
+}
+
+function loadAnnList() {
+  var el = document.getElementById('ann-list');
+  db.ref('genel_veriler/duyuru_list').limitToLast(10).once('value').then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:var(--text3);font-size:.83rem">Duyuru yok.</div>'; return; }
+    var items = [];
+    snap.forEach(function(c) { items.unshift({ key: c.key, ...c.val() }); });
+    el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Mesaj</th><th>Öncelik</th><th>Zaman</th><th></th></tr></thead><tbody>' +
+      items.map(function(d) {
+        return '<tr><td style="max-width:200px;word-break:break-word;font-size:.82rem">'+d.mesaj+'</td>' +
+          '<td><span class="badge '+(d.priority==='alert'?'badge-red':d.priority==='high'?'badge-gold':'badge-grey')+'">'+d.priority+'</span></td>' +
+          '<td style="font-size:.75rem">'+new Date(d.ts).toLocaleString('tr-TR')+'</td>' +
+          '<td><button class="btn btn-sm btn-red" onclick="deleteAnn(\''+d.key+'\')">Sil</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+}
+
+function deleteAnn(key) {
+  db.ref('genel_veriler/duyuru_list/' + key).remove().then(function() { toast('Duyuru silindi.', 'info'); loadAnnList(); });
+}
+
+// ═══ OYUNCU ARA ═══
+function searchPlayer() {
+  var uid = document.getElementById('p-uid').value.trim();
+  var el  = document.getElementById('player-result');
+  if (!uid) return toast('UID girin.', 'error');
+  el.innerHTML = '<div style="color:var(--text3)">Aranıyor...</div>';
+  fdb.collection('users').doc(uid).get().then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:#f07070">Oyuncu bulunamadı.</div>'; return; }
+    var d = snap.data();
+    el.innerHTML = '<div class="player-result">' +
+      '<h4>'+((d.profile && d.profile.name) || '—')+'</h4>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.83rem;margin-bottom:.85rem">' +
+        '<div>💰 TL: <b>'+(((d.wallet && d.wallet.tl) || 0).toLocaleString('tr-TR'))+'</b></div>' +
+        '<div>💎 Elmas: <b>'+((d.profile && d.profile.elmas) || 0)+'</b></div>' +
+        '<div>⭐ Seviye: <b>'+((d.profile && d.profile.level) || 1)+'</b></div>' +
+        '<div>📧 E-posta: <b>'+((d.profile && d.profile.email) || '—')+'</b></div>' +
+        '<div>🚦 Ban: <b>'+(d.isBanned ? '<span style="color:#f07070">BANLI</span>' : '<span style="color:var(--green-l)">Aktif</span>')+'</b></div>' +
+        '<div>🤫 Mute: <b>'+((d.durum && d.durum.muted) ? '<span style="color:#f07070">Susturulmuş</span>' : '<span style="color:var(--green-l)">Normal</span>')+'</b></div>' +
+      '</div>' +
+      '<div class="form-label" style="margin-top:.75rem">TL Bakiyesini Güncelle</div>' +
+      '<div style="display:flex;gap:.75rem">' +
+        '<input id="edit-tl" type="number" class="form-input" style="margin:0;flex:1" value="'+((d.wallet && d.wallet.tl)||0)+'">' +
+        '<button class="btn btn-gold" onclick="updatePlayerTL(\''+uid+'\')">Kaydet</button>' +
+      '</div>' +
+      '<div class="btn-group" style="margin-top:.75rem">' +
+        '<button class="btn btn-sm btn-red" onclick="confirm2(\'⛔ Banla\',\'Bu oyuncuyu banlamak istiyor musunuz?\',function(){document.getElementById(\'ban-uid\').value=\''+uid+'\';banPlayer()})">⛔ Ban</button>' +
+        '<button class="btn btn-sm" onclick="confirm2(\'✅ Ban Kaldır\',\'Banı kaldırmak istiyor musunuz?\',function(){quickUnban(\''+uid+'\')})">Ban Kaldır</button>' +
+      '</div>' +
+      '</div>';
+  }).catch(function(e) { el.innerHTML = '<div style="color:#f07070">Hata: ' + e.message + '</div>'; });
+}
+
+function updatePlayerTL(uid) {
+  var tl = parseFloat(document.getElementById('edit-tl').value);
+  if (isNaN(tl)) return toast('Geçerli değer girin.', 'error');
+  fdb.collection('users').doc(uid).update({ 'wallet.tl': tl })
+    .then(function() { toast('✅ Bakiye güncellendi: ' + tl.toLocaleString('tr-TR') + ' TL', 'gold'); adminLog('💱 Bakiye güncellendi: ' + uid.slice(0,8) + ' → ' + tl + ' TL'); })
+    .catch(function(e) { toast('Hata: ' + e.message, 'error'); });
+}
+
+function loadRecentPlayers() {
+  var el = document.getElementById('recent-players');
+  fdb.collection('users').orderBy('stats.loginCount', 'desc').limit(10).get().then(function(snap) {
+    if (!snap.size) { el.innerHTML = '<div style="color:var(--text3)">Oyuncu yok.</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Ad</th><th>TL</th><th>Sev.</th><th>Durum</th><th></th></tr></thead><tbody>' +
+      snap.docs.map(function(doc) {
+        var d = doc.data();
+        return '<tr><td><b>' + ((d.profile && d.profile.name) || '—') + '</b><br><span style="font-size:.7rem;color:var(--text3)">'+doc.id.slice(0,10)+'...</span></td>' +
+          '<td>' + (((d.wallet && d.wallet.tl) || 0)).toLocaleString('tr-TR') + ' TL</td>' +
+          '<td>Lv.' + ((d.profile && d.profile.level) || 1) + '</td>' +
+          '<td>' + (d.isBanned ? '<span class="badge badge-red">Banlı</span>' : '<span class="badge badge-green">Aktif</span>') + '</td>' +
+          '<td><button class="btn btn-sm btn-ghost" onclick="document.getElementById(\'p-uid\').value=\''+doc.id+'\';searchPlayer()">🔍</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+}
+
+// ═══ ADMIN LOGLAR ═══
+function loadAdminLogs() {
+  var el = document.getElementById('admin-logs-list');
+  db.ref('admin_log').limitToLast(50).once('value').then(function(snap) {
+    if (!snap.exists()) { el.innerHTML = '<div style="color:var(--text3)">Log yok.</div>'; return; }
+    var items = [];
+    snap.forEach(function(c) { items.unshift(c.val()); });
+    el.innerHTML = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Zaman</th><th>İşlem</th></tr></thead><tbody>' +
+      items.map(function(d) {
+        return '<tr><td style="white-space:nowrap;font-size:.78rem;color:var(--text2)">'+new Date(d.ts).toLocaleString('tr-TR')+'</td><td style="font-size:.83rem">'+d.msg+'</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+}
+
+// ═══ ONAY MODAL ═══
+var _confirmCb = null;
+function confirm2(title, msg, cb) {
+  document.getElementById('cm-title').textContent = title;
+  document.getElementById('cm-msg').textContent   = msg;
+  document.getElementById('cm-ok').onclick = function() { closeConfirm(); if (cb) cb(); };
+  document.getElementById('confirm-modal').classList.add('open');
+  _confirmCb = cb;
+}
+function closeConfirm() { document.getElementById('confirm-modal').classList.remove('open'); }
+
+// ═══ TOAST ═══
+function toast(msg, type) {
+  type = type || 'info';
+  var wrap = document.getElementById('toast-wrap');
+  var el   = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(function() { el.remove(); }, 5000);
+}
+
+// ═══ BAN TYPE TOGGLE ═══
+document.addEventListener('DOMContentLoaded', function() {
+  var bt = document.getElementById('ban-type');
+  if (bt) bt.addEventListener('change', function() {
+    var dw = document.getElementById('ban-dur-wrap');
+    if (dw) dw.style.display = this.value === 'permanent' ? 'none' : 'block';
+  });
+});
+
+// Inf slider
+document.addEventListener('DOMContentLoaded', function() {
+  var sl = document.getElementById('inf-slider');
+  if (sl) sl.addEventListener('input', function() { document.getElementById('inf-val').textContent = '%' + this.value; });
+});
+</script>
+</body>
+</html>
