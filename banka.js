@@ -174,7 +174,7 @@ var BANKA = (function() {
     }
 
     // Kredi başvurusu
-    html += '<div style="margin:.75rem"><button class="btn btn-blue btn-fw btn-lg" onclick="BANKA.showKrediBaşvur()">Kredi Başvurusu Yap</button></div>';
+    html += '<div style="margin:.75rem"><button class="btn btn-blue btn-fw btn-lg" onclick="BANKA.showKrediBasvur()">Kredi Başvurusu Yap</button></div>';
     html += '<div class="card" style="margin:.75rem"><div class="bank-section-title">KREDİ LIMIT</div>';
     html += '<div style="padding:.75rem 1rem;font-size:.85rem;color:var(--text2)">Kredi limitiniz kredi notunuza ve seviyenize göre belirlenir.</div>';
 
@@ -274,19 +274,32 @@ var BANKA = (function() {
   }
 
   // ══ KREDİ ══
-  function showKrediBaşvur() {
+  function showKrediBasvur() {
     var html = '<div class="form-row"><label class="form-label">Banka</label><select id="kr-bank" class="inp">';
     D.BANKS.filter(function(b){return b.maxKredi>0;}).forEach(function(b) {
       html += '<option value="' + b.id + '">' + b.emoji + ' ' + b.name + ' (Max: ' + OYUN.fmt(b.maxKredi) + ')</option>';
     });
     html += '</select></div>';
-    html += '<div class="form-row"><label class="form-label">Tutar (₺)</label><input type="number" id="kr-tutar" class="inp" placeholder="50000" min="1000"></div>';
-    html += '<div class="form-row"><label class="form-label">Vade (Ay)</label><select id="kr-vade" class="inp"><option value="6">6 Ay</option><option value="12" selected>12 Ay</option><option value="24">24 Ay</option><option value="36">36 Ay</option></select></div>';
+    html += '<div class="form-row"><label class="form-label">Tutar (₺)</label><input type="number" id="kr-tutar" class="inp" placeholder="50000" min="1000" oninput="BANKA._krediHesapla()"></div>';
+    html += '<div class="form-row"><label class="form-label">Vade (Ay)</label><select id="kr-vade" class="inp" onchange="BANKA._krediHesapla()"><option value="6">6 Ay</option><option value="12" selected>12 Ay</option><option value="24">24 Ay</option><option value="36">36 Ay</option></select></div>';
     html += '<div id="kr-ozet" style="background:var(--bg3);border-radius:var(--r-sm);padding:.75rem;margin-bottom:.75rem;font-size:.82rem;color:var(--text2)">Tutar girin...</div>';
     html += '<div style="background:rgba(255,179,0,.1);border-radius:var(--r-sm);padding:.75rem;margin-bottom:.75rem;font-size:.8rem;color:#E65100">⏳ Başvuru yapıldıktan <b>5-15 dakika</b> içinde bot tarafından otomatik onaylanır.</div>';
     html += '<button class="btn btn-blue btn-fw btn-lg" onclick="BANKA.krediBasvur()">Başvur</button>';
-    html += '<script>document.getElementById("kr-tutar").oninput = function() { var t=parseFloat(this.value)||0; var b=D.BANKS.find(function(x){return x.id===document.getElementById("kr-bank").value;})||{faizKredi:0.5}; var ay=parseInt(document.getElementById("kr-vade").value)||12; var aylik=t*(b.faizKredi/12); var toplam=t+aylik*ay; document.getElementById("kr-ozet").innerHTML="Aylık taksit: <b>' + "'OYUN.fmt(aylik)'" + '</b> • Toplam geri ödeme: <b>' + "'OYUN.fmt(toplam)'" + '</b>"; };<\/script>';
     UI.showModal("Kredi Başvurusu", html);
+  }
+
+  function _krediHesapla() {
+    var tutarEl = document.getElementById("kr-tutar");
+    var bankEl  = document.getElementById("kr-bank");
+    var vadeEl  = document.getElementById("kr-vade");
+    var ozetEl  = document.getElementById("kr-ozet");
+    if (!tutarEl || !bankEl || !vadeEl || !ozetEl) return;
+    var t   = parseFloat(tutarEl.value) || 0;
+    var b   = D.BANKS.find(function(x){return x.id === bankEl.value;}) || {faizKredi:0.5};
+    var ay  = parseInt(vadeEl.value) || 12;
+    var aylik  = t * (b.faizKredi / 12);
+    var toplam = t + aylik * ay;
+    ozetEl.innerHTML = "Aylık taksit: <b>" + OYUN.fmt(aylik) + "</b> • Toplam geri ödeme: <b>" + OYUN.fmt(toplam) + "</b>";
   }
 
   function krediBasvur() {
@@ -484,9 +497,10 @@ var BANKA = (function() {
     showParaYatir:showParaYatir, paraYatir:paraYatir,
     showParaCek:showParaCek, paraCek:paraCek,
     showYatirimHesap:showYatirimHesap, yatirimYatir:yatirimYatir, yatirimCek:yatirimCek,
-    showKrediBaşvur:showKrediBaşvur, krediBasvur:krediBasvur, krediOde:krediOde, showKrediOde:showKrediOde,
+    showKrediBasvur:showKrediBasvur, krediBasvur:krediBasvur, krediOde:krediOde, showKrediOde:showKrediOde,
     showMevduatAc:showMevduatAc, mevduatAc:mevduatAc, mevduatCoz:mevduatCoz,
     isletmeOde:isletmeOde, maasOde:maasOde,
-    showPromoModal:showPromoModal, promoKullan:promoKullan
+    showPromoModal:showPromoModal, promoKullan:promoKullan,
+    _krediHesapla:_krediHesapla
   };
 })();

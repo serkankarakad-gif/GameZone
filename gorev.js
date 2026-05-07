@@ -7,7 +7,7 @@
 var GOREV = (function() {
 
   var GUNLUK = [
-    {id:"g1",  name:"İlk Alım",         aciklama:"Bugün hisse sat ın al",            hedef:1,  xp:50,  elmas:0, tip:"borsa_al"  },
+    {id:"g1",  name:"İlk Alım",         aciklama:"Bugün hisse senedi al",               hedef:1,  xp:50,  elmas:0, tip:"borsa_al"  },
     {id:"g2",  name:"Piyasa Takipçisi", aciklama:"Kripto fiyatına bak",              hedef:3,  xp:30,  elmas:0, tip:"kripto_bak"},
     {id:"g3",  name:"Günlük Giriş",     aciklama:"Oyuna giriş yap",                 hedef:1,  xp:100, elmas:1, tip:"giris"     },
     {id:"g4",  name:"Tüccar",           aciklama:"5 farklı işlem yap",              hedef:5,  xp:80,  elmas:0, tip:"islem"     },
@@ -26,9 +26,9 @@ var GOREV = (function() {
   ];
 
   var BASARIMLAR = [
-    {id:"b1",  name:"İlk Adım",      emoji:"🎯", aciklama:"İlk hisse al ımını yap",      xp:200,  elmas:2  },
-    {id:"b2",  name:"Trilyoner Yolu",emoji:"💰", aciklama:"1 Milyar TL varlık biriktir", xp:5000, elmas:50 },
-    {id:"b3",  name:"Koleksiyoncu",  emoji:"🏡", aciklama:"5 gayrimenkul sat ın al",     xp:1000, elmas:10 },
+    {id:"b1",  name:"İlk Adım",      emoji:"🎯", aciklama:"İlk hisse alımını yap",           xp:200,  elmas:2  },
+    {id:"b2",  name:"Trilyoner Yolu",emoji:"💰", aciklama:"1 Milyar TL varlık biriktir",     xp:5000, elmas:50 },
+    {id:"b3",  name:"Koleksiyoncu",  emoji:"🏡", aciklama:"5 gayrimenkul satın al",           xp:1000, elmas:10 },
     {id:"b4",  name:"Çelik Gibi",    emoji:"🔒", aciklama:"10 ay kredi taksiti öde",    xp:800,  elmas:8  },
     {id:"b5",  name:"Kripto Ustası", emoji:"₿",  aciklama:"Her kriptoyu bir kez al",    xp:1500, elmas:15 },
     {id:"b6",  name:"Ticaret İmparatorluğu",emoji:"🏪",aciklama:"10 dükkan aç",        xp:3000, elmas:30 },

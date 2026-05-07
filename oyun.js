@@ -12,6 +12,7 @@ var OYUN = (function() {
   // ══ BAŞLAT ══
   function init() {
     initFirebase();
+    // Not: PIYASA kendi kendini başlatır (IIFE içinde)
     fbAuth.onAuthStateChanged(function(user) {
       if (user) { _u = user; _yukle(user); }
       else { _u=null; _s=null; UI.showAuth(); }
@@ -30,7 +31,9 @@ var OYUN = (function() {
         _s.istatistik.sonGiris = new Date().toISOString();
       } else {
         var isim = user.displayName || (user.email && user.email.split("@")[0]) || "Oyuncu";
-        _s = AUTH._defaultState ? AUTH._defaultState(user.uid, isim, user.email) : _defaultState(user.uid, isim, user.email||"");
+        _s = (typeof AUTH !== "undefined" && AUTH._defaultState)
+          ? AUTH._defaultState(user.uid, isim, user.email || "")
+          : _defaultState(user.uid, isim, user.email || "");
       }
       _dirty = true;
       return _kaydet();
@@ -117,18 +120,12 @@ var OYUN = (function() {
 
     // Dükkan gelirleri
     Object.values(_s.dukkanlar || {}).forEach(function(d) {
-      if (d.reyonlar) {
-        d.reyonlar.forEach(function(r) {
-          if ((r.stok || 0) > 0) {
-            var satis = Math.min(r.stok, Math.floor(r.stok * 0.15 * saat));
-            if (satis > 0) {
-              var gelir = satis * (r.satisFiyati || 0);
-              r.stok -= satis;
-              r.toplamSatis = (r.toplamSatis || 0) + gelir;
-              total += gelir;
-            }
-          }
-        });
+      // Dükkan stok yapısı: d.stok = { urunId: miktar }
+      if (d.stok && d.turId) {
+        // Basit offline gelir: toplamKazanc'ın saatlik ortalaması
+        var gunlukOrtalama = (d.toplamKazanc || 0) / Math.max(1, (Date.now() - (d.acilis || Date.now())) / 86400000);
+        var gelir = gunlukOrtalama * saat * 0.5; // offline %50 verimlilik
+        if (gelir > 1) total += Math.round(gelir);
       }
     });
 
@@ -156,6 +153,8 @@ var OYUN = (function() {
 
     // Piyasa güncellemesi — 20 dakikada bir
     if (typeof PIYASA !== "undefined") {
+      // İlk tick hemen
+      PIYASA.tick();
       _timers.push(setInterval(function() {
         PIYASA.tick();
       }, 20 * 60 * 1000)); // 20 dakika

@@ -150,5 +150,5 @@ var AUTH = (function() {
     b.textContent = loading ? ("⏳ " + txt) : txt;
   }
 
-  return { show:show, login:login, register:register, forgotPassword:forgotPassword, logout:logout, sanitize:sanitize };
+  return { show:show, login:login, register:register, forgotPassword:forgotPassword, logout:logout, sanitize:sanitize, _defaultState:_defaultState };
 })();

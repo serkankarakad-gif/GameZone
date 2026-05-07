@@ -26,8 +26,13 @@ function initFirebase() {
     window.fbDB   = firebase.database();
     console.log("✅ Firebase (Realtime DB) hazır");
   } catch(e) {
-    console.error("Firebase init:", e);
-    UI.toast("Sunucu bağlantısı kurulamadı!", "error");
+    console.error("Firebase init hatası:", e);
+    // UI henüz yüklenmemiş olabilir, setTimeout ile güvenli çağır
+    setTimeout(function() {
+      if (typeof UI !== "undefined" && UI.toast) {
+        UI.toast("Sunucu bağlantısı kurulamadı!", "error");
+      }
+    }, 500);
   }
 }
 

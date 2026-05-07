@@ -701,7 +701,7 @@ var DUKKAN = (function () {
   function _sev(n){ return SEVIYELER.find(function(x){return x.s===n;})||SEVIYELER[0]; }
   function _il(p){ return ILLER.find(function(x){return x.plaka===p;}); }
   function _tur(id){ return DUKKAN_TURLERI.find(function(x){return x.id===id;}); }
-  function _st(){ if(!GAME.state.dukkanlar) GAME.state.dukkanlar={}; return GAME.state.dukkanlar; }
+  function _st(){ if(!OYUN.s.dukkanlar) OYUN.s.dukkanlar={}; return OYUN.s.dukkanlar; }
 
   // ════ DÜKKAN AÇ ════
   function dukkanAc(plaka, turId){
@@ -710,11 +710,11 @@ var DUKKAN = (function () {
     if(!il||!tur) return UI.toast("Geçersiz seçim.","error");
     var durum=_st();
     if(durum[plaka]) return UI.toast(il.ad+" ilinde zaten dükkanınız var!","warning");
-    if(!GAME.spend(tur.acilis, tur.ad+" açılış")) return;
+    if(!OYUN.harca(tur.acilis, tur.ad+" açılış")) return;
     var stok={};
     tur.urunler.forEach(function(u){stok[u.id]=0;});
     durum[plaka]={ilAdi:il.ad,plaka:plaka,turId:turId,turAdi:tur.ad,emoji:tur.emoji,seviye:1,stok:stok,toplamKazanc:0,acilis:Date.now(),sonGelir:Date.now()};
-    GAME.dirty=true; GAME.addXP(200);
+    OYUN.kaydet(); OYUN.xpEkle(200);
     UI.toast("🎉 "+il.ad+" — "+tur.emoji+" "+tur.ad+" açıldı!","success");
     renderDukkanlar();
   }
@@ -726,9 +726,9 @@ var DUKKAN = (function () {
     if(!d) return;
     if(d.seviye>=10) return UI.toast("Maksimum seviye!","warning");
     var sonraki=_sev(d.seviye+1);
-    if(!GAME.spend(sonraki.maliyet,"Yükseltme")) return;
+    if(!OYUN.harca(sonraki.maliyet,"Yükseltme")) return;
     d.seviye++;
-    GAME.dirty=true; GAME.addXP(100*d.seviye);
+    OYUN.kaydet(); OYUN.xpEkle(100*d.seviye);
     UI.toast("⬆️ "+d.turAdi+" Seviye "+d.seviye+"!","success");
     renderDukkanlar();
   }
@@ -743,9 +743,9 @@ var DUKKAN = (function () {
     var mevcut=d.stok[urunId]||0;
     if(mevcut>=max) return UI.toast("Depo dolu! Önce sat.","warning");
     miktar=Math.min(miktar,max-mevcut);
-    if(!GAME.spend(urun.m*miktar,"Üretim")) return;
+    if(!OYUN.harca(urun.m*miktar,"Üretim")) return;
     d.stok[urunId]=mevcut+miktar;
-    GAME.dirty=true; GAME.addXP(3);
+    OYUN.kaydet(); OYUN.xpEkle(3);
     UI.toast("✅ "+miktar+"x "+urun.emoji+" "+urun.ad+" üretildi.","success");
     renderDukkanDetay(plaka);
   }
@@ -765,15 +765,15 @@ var DUKKAN = (function () {
       if(satis<=0) return;
       var gelir=Math.round(satis*urun.s*sb.gc);
       d.stok[urun.id]-=satis; toplamGelir+=gelir;
-      satirlar.push(urun.emoji+" "+urun.ad+": "+satis+" adet → "+GAME.fmt(gelir));
+      satirlar.push(urun.emoji+" "+urun.ad+": "+satis+" adet → "+OYUN.fmt(gelir));
     });
     if(toplamGelir<=0) return UI.toast("Stok boş! Ürün üretin.","warning");
     d.sonGelir=Date.now(); d.toplamKazanc+=toplamGelir;
-    GAME.earnNet(toplamGelir); GAME.addXP(Math.floor(toplamGelir/100)); GAME.dirty=true;
+    OYUN.kazan(toplamGelir); OYUN.xpEkle(Math.floor(toplamGelir/100)); OYUN.kaydet();
     UI.showModal("💰 "+d.turAdi+" — "+il.ad,
       '<div style="line-height:2;font-size:.9rem">'+
       satirlar.map(function(s){return'<div>✅ '+s+'</div>';}).join('')+
-      '<div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border);font-size:1.05rem">Toplam: <b style="color:var(--gold)">'+GAME.fmt(toplamGelir)+'</b></div></div>');
+      '<div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border);font-size:1.05rem">Toplam: <b style="color:var(--gold)">'+OYUN.fmt(toplamGelir)+'</b></div></div>');
     renderDukkanlar();
   }
 
@@ -782,7 +782,7 @@ var DUKKAN = (function () {
     plaka=parseInt(plaka);
     var d=_st()[plaka]; if(!d) return;
     if(!confirm(d.turAdi+" — "+d.ilAdi+" kapatılsın mı?")) return;
-    delete _st()[plaka]; GAME.dirty=true;
+    delete _st()[plaka]; OYUN.kaydet();
     UI.toast("Dükkan kapatıldı.","info"); renderDukkanlar();
   }
 
@@ -796,7 +796,7 @@ var DUKKAN = (function () {
       var tk=acik.reduce(function(t,d){return t+d.toplamKazanc;},0);
       html+='<div class="stats-grid" style="margin-bottom:1.5rem">';
       html+='<div class="stat-card gold"><div class="stat-icon">🏪</div><div class="stat-value">'+acik.length+'/81</div><div class="stat-label">Açık Dükkan</div></div>';
-      html+='<div class="stat-card green"><div class="stat-icon">💰</div><div class="stat-value">'+GAME.fmt(tk)+'</div><div class="stat-label">Toplam Kazanç</div></div>';
+      html+='<div class="stat-card green"><div class="stat-icon">💰</div><div class="stat-value">'+OYUN.fmt(tk)+'</div><div class="stat-label">Toplam Kazanç</div></div>';
       html+='</div>';
       html+='<div class="card-grid">';
       acik.forEach(function(d){
@@ -810,11 +810,11 @@ var DUKKAN = (function () {
         html+='<div style="margin:.6rem 0"><div class="progress"><div class="progress-fill" style="width:'+(d.seviye/10*100)+'%"></div></div></div>';
         html+='<div style="font-size:.8rem;color:var(--text2);display:grid;grid-template-columns:1fr 1fr;gap:.25rem;margin-bottom:.75rem">';
         html+='<div>👥 '+ms.toLocaleString("tr-TR")+'/sa</div><div>📦 Stok: '+ts+'</div>';
-        html+='<div>💰 '+GAME.fmt(d.toplamKazanc)+'</div><div>x'+sb.gc+' gelir</div></div>';
+        html+='<div>💰 '+OYUN.fmt(d.toplamKazanc)+'</div><div>x'+sb.gc+' gelir</div></div>';
         html+='<div class="btn-group">';
         html+='<button class="btn btn-gold btn-sm" onclick="DUKKAN.gelirTopla('+d.plaka+')">💰 Gelir</button>';
         html+='<button class="btn btn-sm" onclick="DUKKAN.renderDukkanDetay('+d.plaka+')">📦 Ürünler</button>';
-        if(sonraki) html+='<button class="btn btn-green btn-sm" onclick="DUKKAN.dukkanYukselt('+d.plaka+')" title="'+GAME.fmt(sonraki.maliyet)+'">⬆️ Yükselt</button>';
+        if(sonraki) html+='<button class="btn btn-green btn-sm" onclick="DUKKAN.dukkanYukselt('+d.plaka+')" title="'+OYUN.fmt(sonraki.maliyet)+'">⬆️ Yükselt</button>';
         html+='<button class="btn btn-sm btn-red" onclick="DUKKAN.dukkanKapat('+d.plaka+')">🔒</button>';
         html+='</div></div>';
       });
@@ -832,7 +832,7 @@ var DUKKAN = (function () {
     html+='</select></div>';
     html+='<div><label class="form-label">Dükkan Türü ('+DUKKAN_TURLERI.length+' tür)</label><select id="dk-tur" class="input" onchange="DUKKAN.ilBilgi()">';
     DUKKAN_TURLERI.forEach(function(t){
-      html+='<option value="'+t.id+'">'+t.emoji+' '+t.ad+' — '+GAME.fmt(t.acilis)+'</option>';
+      html+='<option value="'+t.id+'">'+t.emoji+' '+t.ad+' — '+OYUN.fmt(t.acilis)+'</option>';
     });
     html+='</select></div></div>';
     html+='<div id="dk-bilgi" style="margin-top:.75rem;font-size:.85rem;color:var(--text2)"></div>';
@@ -859,7 +859,7 @@ var DUKKAN = (function () {
     if(!ilEl||!turEl||!bilgiEl) return;
     var il=_il(parseInt(ilEl.value)), tur=_tur(turEl.value);
     if(!il||!tur) return;
-    bilgiEl.innerHTML='<b>'+il.ad+'</b> nüfus: '+il.nufus.toLocaleString("tr-TR")+' | Bölge: '+il.bolge+' | Zenginlik: '+"⭐".repeat(il.zenginlik)+' <br>'+tur.emoji+' '+tur.ad+': <b>'+GAME.fmt(tur.acilis)+'</b> açılış — '+tur.urunler.length+' ürün çeşidi';
+    bilgiEl.innerHTML='<b>'+il.ad+'</b> nüfus: '+il.nufus.toLocaleString("tr-TR")+' | Bölge: '+il.bolge+' | Zenginlik: '+"⭐".repeat(il.zenginlik)+' <br>'+tur.emoji+' '+tur.ad+': <b>'+OYUN.fmt(tur.acilis)+'</b> açılış — '+tur.urunler.length+' ürün çeşidi';
   }
 
   // ════ DETAY RENDER ════
@@ -876,15 +876,15 @@ var DUKKAN = (function () {
       html+='<div class="card"><div style="text-align:center;font-size:1.8rem">'+urun.emoji+'</div>';
       html+='<div style="text-align:center;font-weight:700;margin:.4rem 0;font-size:.92rem">'+urun.ad+'</div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem;font-size:.78rem;color:var(--text2);margin-bottom:.6rem">';
-      html+='<div>Maliyet: <b style="color:var(--text)">'+GAME.fmt(urun.m)+'</b></div>';
-      html+='<div>Satış: <b style="color:var(--green)">'+GAME.fmt(urun.s)+'</b></div>';
-      html+='<div>Kâr: <b style="color:var(--gold)">'+GAME.fmt(kar)+'</b></div>';
+      html+='<div>Maliyet: <b style="color:var(--text)">'+OYUN.fmt(urun.m)+'</b></div>';
+      html+='<div>Satış: <b style="color:var(--green)">'+OYUN.fmt(urun.s)+'</b></div>';
+      html+='<div>Kâr: <b style="color:var(--gold)">'+OYUN.fmt(kar)+'</b></div>';
       html+='<div>Marj: <b style="color:var(--gold)">%'+karPct+'</b></div></div>';
       html+='<div style="font-size:.72rem;color:var(--text2);margin-bottom:.3rem">Stok: '+stok+'/'+max+'</div>';
       html+='<div class="progress" style="margin-bottom:.6rem"><div class="progress-fill" style="width:'+pct+'%;background:'+(pct>70?'var(--green)':pct>30?'var(--gold)':'var(--red-l)')+'"></div></div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem">';
       [10,50,100].forEach(function(a){
-        html+='<button class="btn btn-sm btn-gold" onclick="DUKKAN.uretimYap('+plaka+',\''+urun.id+'\','+a+')" title="'+GAME.fmt(urun.m*a)+'">'+a+'x</button>';
+        html+='<button class="btn btn-sm btn-gold" onclick="DUKKAN.uretimYap('+plaka+',\''+urun.id+'\','+a+')" title="'+OYUN.fmt(urun.m*a)+'">'+a+'x</button>';
       });
       html+='</div>';
       html+='<div style="display:flex;gap:.4rem;margin-top:.4rem">';
