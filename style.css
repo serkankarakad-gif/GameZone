@@ -9,7 +9,7 @@ canvas{display:block}
 button{font-family:'Rajdhani','Courier New',monospace}
 
 /* ── NAME MODAL ── */
-#name-modal{position:fixed;inset:0;background:radial-gradient(ellipse at center,#0a1020 0%,#000 100%);z-index:1000;display:flex;align-items:center;justify-content:center}
+#name-modal{position:fixed;inset:0;background:radial-gradient(ellipse at center,#0a1020 0%,#000 100%);z-index:1000;display:none;align-items:center;justify-content:center}
 #name-modal-box{text-align:center;padding:40px;border:1px solid rgba(255,0,0,.3);background:rgba(0,0,0,.8);border-radius:8px;min-width:280px}
 #name-modal-logo{font-size:36px;font-weight:700;letter-spacing:10px;color:#ff2222;text-shadow:0 0 30px #ff0000,0 0 60px #880000;margin-bottom:4px;animation:pulse 2s infinite}
 #name-modal-sub{font-size:11px;letter-spacing:5px;color:#555;margin-bottom:28px}
