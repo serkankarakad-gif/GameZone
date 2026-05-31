@@ -17,35 +17,51 @@ try {
   });
   _fbReady = true;
 
-  // ── Auth state listener — controls entire screen flow ──
   firebase.auth().onAuthStateChanged(user => {
+    // Eğer eski anonim oturum varsa hemen sil, auth ekranına dön
+    if (user && user.isAnonymous) {
+      firebase.auth().signOut();
+      return;
+    }
+
     currentUser = user;
-    const authModal  = document.getElementById('auth-modal');
-    const nameModal  = document.getElementById('name-modal');
-    const lobbyEl    = document.getElementById('lobby');
 
     if (user) {
-      // User logged in — load data then decide what to show
-      if (authModal) authModal.style.display = 'none';
+      // Gerçek kullanıcı (email/password) → veriyi yükle
+      _hideAuthModal();
       loadDataFromFirebase();
     } else {
-      // Not logged in — show auth screen
-      if (authModal)  authModal.style.display  = 'flex';
-      if (nameModal)  nameModal.style.display   = 'none';
-      if (lobbyEl)    lobbyEl.style.display      = 'none';
+      // Giriş yok → sadece auth ekranını göster, başka hiçbir şey açma
+      _showAuthModal();
     }
   });
 
 } catch(e) {
-  console.warn('[FB] Init failed:', e);
-  // Full fallback: skip auth entirely
+  console.warn('[FB] Firebase init hatası:', e);
+  // Firebase tamamen çalışmıyorsa localStorage ile devam et
   setTimeout(() => {
     loadDataLocal();
-    const authModal = document.getElementById('auth-modal');
-    const nameModal = document.getElementById('name-modal');
-    if (authModal) authModal.style.display = 'none';
-    if (nameModal) nameModal.style.display = 'flex';
-  }, 120);
+    _hideAuthModal();
+    _showNameModal();
+  }, 150);
+}
+
+// ── Ekran yardımcıları ──
+function _showAuthModal() {
+  const el = document.getElementById('auth-modal');
+  if (el) el.style.display = 'flex';
+  const nm = document.getElementById('name-modal');
+  if (nm) nm.style.display = 'none';
+  const lb = document.getElementById('lobby');
+  if (lb) lb.style.display = 'none';
+}
+function _hideAuthModal() {
+  const el = document.getElementById('auth-modal');
+  if (el) el.style.display = 'none';
+}
+function _showNameModal() {
+  const el = document.getElementById('name-modal');
+  if (el) el.style.display = 'flex';
 }
 
 function fbDB() {
@@ -53,38 +69,37 @@ function fbDB() {
 }
 
 // ══════════════════════════════════════════════
-//  AUTH UI HELPERS
+//  AUTH SEKME / FORM KONTROLLERI
 // ══════════════════════════════════════════════
 
 function showAuthTab(tab) {
-  const loginForm  = document.getElementById('auth-login-form');
-  const regForm    = document.getElementById('auth-register-form');
-  const loginBtn   = document.getElementById('tab-login-btn');
-  const regBtn     = document.getElementById('tab-register-btn');
-  if (loginForm) loginForm.style.display  = tab === 'login'    ? 'flex' : 'none';
-  if (regForm)   regForm.style.display    = tab === 'register' ? 'flex' : 'none';
-  if (loginBtn)  loginBtn.classList.toggle('active',  tab === 'login');
-  if (regBtn)    regBtn.classList.toggle('active',    tab === 'register');
+  const lf = document.getElementById('auth-login-form');
+  const rf = document.getElementById('auth-register-form');
+  const lb = document.getElementById('tab-login-btn');
+  const rb = document.getElementById('tab-register-btn');
+  if (lf) lf.style.display = tab === 'login'    ? 'flex' : 'none';
+  if (rf) rf.style.display = tab === 'register' ? 'flex' : 'none';
+  if (lb) lb.classList.toggle('active', tab === 'login');
+  if (rb) rb.classList.toggle('active', tab === 'register');
   hideAuthMsg();
 }
 
-function showAuthMsg(msg, isOk) {
+function showAuthMsg(msg, ok) {
   const el = document.getElementById('auth-error');
   if (!el) return;
   el.textContent = msg;
   el.style.display = 'block';
-  el.style.color   = isOk ? '#44ff88' : '#ff6666';
-  el.style.borderColor = isOk ? 'rgba(50,200,80,0.4)' : 'rgba(200,30,30,0.3)';
+  el.style.color = ok ? '#44ff88' : '#ff6666';
+  el.style.borderColor = ok ? 'rgba(50,200,80,0.4)' : 'rgba(200,30,30,0.35)';
 }
 function hideAuthMsg() {
   const el = document.getElementById('auth-error');
   if (el) el.style.display = 'none';
 }
-
 function setAuthLoading(on) {
   const ld = document.getElementById('auth-loading');
   if (ld) ld.style.display = on ? 'block' : 'none';
-  ['auth-login-btn','auth-register-btn'].forEach(id => {
+  ['auth-login-btn', 'auth-register-btn'].forEach(id => {
     const b = document.getElementById(id);
     if (b) b.disabled = on;
   });
@@ -97,9 +112,8 @@ function doLogin() {
   if (!email || !pass) { showAuthMsg('E-posta ve şifre gerekli!'); return; }
   hideAuthMsg();
   setAuthLoading(true);
-
   firebase.auth().signInWithEmailAndPassword(email, pass)
-    .then(() => { setAuthLoading(false); })
+    .then(() => setAuthLoading(false))
     .catch(err => {
       setAuthLoading(false);
       const TR = {
@@ -107,41 +121,40 @@ function doLogin() {
         'auth/wrong-password':    'Şifre hatalı.',
         'auth/invalid-email':     'Geçersiz e-posta adresi.',
         'auth/invalid-credential':'E-posta veya şifre hatalı.',
-        'auth/too-many-requests': 'Çok fazla deneme. Biraz bekleyin.',
-        'auth/user-disabled':     'Bu hesap devre dışı bırakıldı.',
+        'auth/too-many-requests': 'Çok fazla deneme. Bekleyin.',
+        'auth/user-disabled':     'Bu hesap devre dışı.',
       };
-      showAuthMsg(TR[err.code] || ('Hata: ' + err.message));
+      showAuthMsg(TR[err.code] || 'Giriş hatası: ' + err.message);
     });
 }
 
 // ── KAYIT OL ──
 function doRegister() {
-  const name  = (document.getElementById('auth-reg-name')?.value     || '').trim().toUpperCase().slice(0,12);
+  const name  = (document.getElementById('auth-reg-name')?.value     || '').trim().toUpperCase().slice(0, 12);
   const email = (document.getElementById('auth-reg-email')?.value    || '').trim();
   const pass  =  document.getElementById('auth-reg-password')?.value || '';
-  if (!name)          { showAuthMsg('Oyuncu adı gerekli!'); return; }
-  if (!email)         { showAuthMsg('E-posta adresi gerekli!'); return; }
-  if (pass.length < 6){ showAuthMsg('Şifre en az 6 karakter olmalı!'); return; }
+  if (!name)           { showAuthMsg('Oyuncu adı gerekli!'); return; }
+  if (!email)          { showAuthMsg('E-posta adresi gerekli!'); return; }
+  if (pass.length < 6) { showAuthMsg('Şifre en az 6 karakter olmalı!'); return; }
   hideAuthMsg();
   setAuthLoading(true);
-
   firebase.auth().createUserWithEmailAndPassword(email, pass)
     .then(result => {
       currentUser = result.user;
       LD.playerName = name;
       saveData();
       setAuthLoading(false);
-      // onAuthStateChanged will fire and route to lobby
+      // onAuthStateChanged devreye girer ve lobby'i açar
     })
     .catch(err => {
       setAuthLoading(false);
       const TR = {
-        'auth/email-already-in-use': 'Bu e-posta zaten kayıtlı. Giriş yapın.',
-        'auth/invalid-email':        'Geçersiz e-posta adresi.',
-        'auth/weak-password':        'Şifre çok zayıf (min. 6 karakter).',
-        'auth/operation-not-allowed':'E-posta girişi henüz açılmamış.',
+        'auth/email-already-in-use':  'Bu e-posta zaten kayıtlı. Giriş yapın.',
+        'auth/invalid-email':         'Geçersiz e-posta adresi.',
+        'auth/weak-password':         'Şifre çok zayıf (min. 6 karakter).',
+        'auth/operation-not-allowed': 'E-posta girişi Firebase\'de açılmamış!',
       };
-      showAuthMsg(TR[err.code] || ('Kayıt hatası: ' + err.message));
+      showAuthMsg(TR[err.code] || 'Kayıt hatası: ' + err.message);
     });
 }
 
@@ -157,22 +170,19 @@ function doForgotPassword() {
 // ── ÇIKIŞ YAP ──
 function logoutUser() {
   if (!confirm('Çıkış yapmak istiyor musunuz?')) return;
-  firebase.auth().signOut().catch(e => console.warn(e));
-  // onAuthStateChanged(null) will show auth modal automatically
-  const lobby = document.getElementById('lobby');
-  if (lobby) lobby.style.display = 'none';
+  firebase.auth().signOut();
+  // onAuthStateChanged(null) → _showAuthModal() otomatik çalışır
 }
 
 // ══════════════════════════════════════════════
-//  SAVE / LOAD
+//  VERİ KAYDET / YÜKLE
 // ══════════════════════════════════════════════
 
 function saveData() {
   saveDataLocal();
   if (!_fbReady || !currentUser) return;
   try {
-    const db = fbDB();
-    db.ref('players/' + currentUser.uid).set({
+    firebase.database().ref('players/' + currentUser.uid).set({
       playerName:      LD.playerName,
       bestScore:       LD.bestScore,
       totalKills:      LD.totalKills,
@@ -181,44 +191,41 @@ function saveData() {
       xp:              LD.xp,
       settings:        LD.settings,
       unlockedWeapons: LD.unlockedWeapons,
-      lastSeen:        firebase.database.ServerValue.TIMESTAMP
+      lastSeen:        firebase.database.ServerValue.TIMESTAMP,
     });
-  } catch(e) { console.warn('[FB] Save failed:', e); }
+  } catch(e) { console.warn('[FB] Kayıt hatası:', e); }
 }
 
 function loadDataFromFirebase() {
   if (!_fbReady || !currentUser) { loadDataLocal(); _afterLoad(); return; }
   try {
-    const db = fbDB();
-    db.ref('players/' + currentUser.uid).once('value').then(snap => {
-      const s = snap.val();
-      if (s) applyLoadedData(s);
-      else   loadDataLocal();
-      _afterLoad();
-    }).catch(() => { loadDataLocal(); _afterLoad(); });
+    firebase.database().ref('players/' + currentUser.uid).once('value')
+      .then(snap => {
+        const s = snap.val();
+        if (s) applyLoadedData(s);
+        else   loadDataLocal();
+        _afterLoad();
+      })
+      .catch(() => { loadDataLocal(); _afterLoad(); });
   } catch(e) {
-    console.warn('[FB] Load failed:', e);
-    loadDataLocal(); _afterLoad();
+    console.warn('[FB] Yükleme hatası:', e);
+    loadDataLocal();
+    _afterLoad();
   }
 }
 
 function _afterLoad() {
-  // Route: if player has a name → lobby, else name modal
-  const nameModal = document.getElementById('name-modal');
+  // Auth modal zaten kapalı (onAuthStateChanged kapattı)
+  // Sadece: isim varsa → lobby, yoksa → isim modal
   if (LD.playerName && LD.playerName !== 'KOMUTAN') {
-    if (typeof openLobby === 'function') {
-      const lobby = document.getElementById('lobby');
-      if (!lobby || lobby.style.display === 'none') openLobby();
-      else { refreshLobbyStats?.(); updateRankBadge?.(); }
-    } else {
-      if (nameModal) nameModal.style.display = 'flex';
-    }
+    if (typeof openLobby === 'function') openLobby();
+    else _showNameModal();
   } else {
-    if (nameModal) nameModal.style.display = 'flex';
+    _showNameModal();
   }
 }
 
-// ── localStorage fallback ──
+// ── localStorage yedek ──
 function saveDataLocal() {
   try {
     localStorage.setItem('wz4_save', JSON.stringify({
@@ -242,15 +249,14 @@ function applyLoadedData(s) {
   if (s.unlockedWeapons)  LD.unlockedWeapons  = s.unlockedWeapons;
 }
 
-// ── Leaderboard ──
+// ── Liderboard ──
 function saveScoreFirebase(name, score, kills, place) {
   if (!_fbReady) return;
   try {
-    const db  = fbDB();
     const uid = currentUser ? currentUser.uid : 'anon_' + Date.now();
-    db.ref('leaderboard/' + uid).transaction(ex => {
+    firebase.database().ref('leaderboard/' + uid).transaction(ex => {
       if (!ex || score > (ex.score || 0))
         return { name, score, kills, place, timestamp: firebase.database.ServerValue.TIMESTAMP };
     });
-  } catch(e) { console.warn('[FB] Score save:', e); }
+  } catch(e) { console.warn('[FB] Liderboard hatası:', e); }
 }
