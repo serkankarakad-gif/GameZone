@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>WAR ZONE v4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+</head>
+<body>
+
+<!-- ══════════ NAME MODAL ══════════ -->
+<div id="name-modal">
+  <div id="name-modal-box">
+    <div id="name-modal-logo">WAR ZONE</div>
+    <div id="name-modal-sub">BATTLE ROYALE v4</div>
+    <input id="name-input" type="text" maxlength="12" placeholder="OYUNCU ADINIZ" autocomplete="off" spellcheck="false">
+    <button id="name-confirm-btn" onclick="confirmName()">SAVAŞA GİR</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PUBG-STYLE LOBBY
+══════════════════════════════════════ -->
+<div id="lobby" style="display:none">
+
+  <!-- SKY BACKGROUND -->
+  <canvas id="lobby-bg"></canvas>
+
+  <!-- 3D SCENE (char + vehicle + pet) -->
+  <canvas id="lobby-3d-canvas"></canvas>
+
+  <!-- ── TOP BAR ── -->
+  <div id="top-bar">
+    <!-- Left: Avatar + Level + Name -->
+    <div id="tb-left">
+      <div id="tb-avatar">
+        <div id="player-avatar">🪖</div>
+        <div id="tb-level">
+          <div id="tb-level-num">83</div>
+          <div id="tb-xp-bar"><div id="tb-xp-fill"></div></div>
+        </div>
+      </div>
+      <div id="tb-nameblock">
+        <div id="pnd-name">KOMUTAN</div>
+        <div id="rank-badge">🥉 BRONZ</div>
+      </div>
+      <!-- KOL + EV icons -->
+      <div class="tb-icon-pill">🏠 <span>Kol. 72</span></div>
+      <div class="tb-icon-pill">🏡 <span>Ev</span></div>
+    </div>
+
+    <!-- Center: Mode icons (ping, settings, etc.) -->
+    <div id="tb-center">
+      <div class="tb-mode-btn" title="Ayarlar" onclick="openPanel('settings')">⚙</div>
+      <div class="tb-mode-btn" title="Bildirimler">🔔</div>
+      <div class="tb-mode-btn tb-prime">PRIME ★</div>
+    </div>
+
+    <!-- Right: Currency -->
+    <div id="tb-right">
+      <div class="currency-chip gold">
+        <span class="cc-icon">👑</span>
+        <span class="cc-val" id="tb-gold">10,396</span>
+        <span class="cc-add">＋</span>
+      </div>
+      <div class="currency-chip uc">
+        <span class="cc-icon">💎</span>
+        <span class="cc-val">UC</span>
+        <span class="cc-add">＋</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LEFT SIDE PANEL (Squad list) ── -->
+  <div id="squad-panel">
+    <div class="squad-slot mine">
+      <div class="sq-avatar">🪖</div>
+      <div class="sq-info">
+        <div class="sq-name" id="sq-myname">SEN</div>
+        <div class="sq-bar"><div class="sq-fill" style="width:100%"></div></div>
+      </div>
+      <div class="sq-ping green">●</div>
+    </div>
+    <div class="squad-slot">
+      <div class="sq-avatar add">＋</div>
+      <div class="sq-info"><div class="sq-name dim">Davet Et</div></div>
+    </div>
+    <div class="squad-slot">
+      <div class="sq-avatar add">＋</div>
+      <div class="sq-info"><div class="sq-name dim">Davet Et</div></div>
+    </div>
+    <div class="squad-slot">
+      <div class="sq-avatar add">＋</div>
+      <div class="sq-info"><div class="sq-name dim">Davet Et</div></div>
+    </div>
+    <div id="squad-count">👥 1/4</div>
+  </div>
+
+  <!-- ── RIGHT PANEL (Events + Shop) ── -->
+  <div id="right-panel">
+    <!-- Season pass banner -->
+    <div class="rp-banner" onclick="switchTab('rank')">
+      <div class="rp-banner-bg"></div>
+      <div class="rp-banner-content">
+        <div class="rp-banner-title">S30 / SEZON</div>
+        <div class="rp-banner-sub">Geçiş Paketi</div>
+      </div>
+      <div class="rp-banner-badge">8 ▶</div>
+    </div>
+    <!-- Shop buttons -->
+    <div class="rp-btn-row">
+      <div class="rp-icon-btn" onclick="switchTab('weapons')">
+        <div class="rpib-icon">🛒</div>
+        <div class="rpib-dot red"></div>
+      </div>
+      <div class="rp-icon-btn" onclick="switchTab('chars')">
+        <div class="rpib-icon">🎁</div>
+        <div class="rpib-dot red"></div>
+      </div>
+    </div>
+    <!-- Events -->
+    <div class="rp-section-label">ETKİNLİKLER</div>
+    <div class="rp-event" onclick="switchTab('rank')">
+      <div class="rpe-icon">⚡</div>
+      <div class="rpe-name">Zirve Savaşı</div>
+      <div class="rpe-arrow">▶</div>
+    </div>
+    <div class="rp-event hot">
+      <div class="rpe-icon">🔥</div>
+      <div class="rpe-name">Ödül Modu</div>
+      <div class="rpe-arrow">▶</div>
+    </div>
+    <div class="rp-event">
+      <div class="rpe-icon">🎯</div>
+      <div class="rpe-name">Günlük Görev</div>
+      <div class="rpe-arrow">▶</div>
+    </div>
+    <!-- Maçlar -->
+    <div class="rp-section-label">MAÇLAR</div>
+    <div class="rp-event">
+      <div class="rpe-icon">🏆</div>
+      <div class="rpe-name">Turnuva</div>
+      <div class="rpe-arrow">▶</div>
+    </div>
+  </div>
+
+  <!-- ── CENTER LABELS (char + vehicle + pet) ── -->
+  <div id="lobby-char-name-label">
+    <span id="lobby-char-name">ASKER</span>
+    <span id="lobby-char-tier">✦ Epic</span>
+  </div>
+  <div id="lobby-vehicle-label">⚔ ARAÇ</div>
+  <div id="lobby-pet-label">🦁 ASLAN</div>
+
+  <!-- ── BOTTOM BAR ── -->
+  <div id="bottom-bar">
+
+    <!-- START BUTTON (bottom left, yellow) -->
+    <div id="start-section">
+      <div id="mode-pill">
+        <span id="mode-pill-icon">🪖</span>
+        <div id="mode-pill-text">
+          <div id="mode-pill-main">Klasik · Rütbeli</div>
+          <div id="mode-pill-sub">Erangel</div>
+        </div>
+        <span id="mode-pill-count">3. Şahıs &nbsp; 👥 4</span>
+      </div>
+      <button id="play-btn" onclick="launchGame()">BAŞLA</button>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div id="bottom-nav">
+      <div class="bnav-item" onclick="switchTab('play')" data-tab="play">
+        <div class="bnav-icon">⚔</div>
+        <div class="bnav-label">OYNA</div>
+      </div>
+      <div class="bnav-item" onclick="openPanel('klan')">
+        <div class="bnav-icon">🏛</div>
+        <div class="bnav-label">KLAN</div>
+      </div>
+      <div class="bnav-item active-nav" onclick="switchTab('chars')">
+        <div class="bnav-icon">👤</div>
+        <div class="bnav-label">TEMA</div>
+      </div>
+      <div class="bnav-item" onclick="switchTab('rank')">
+        <div class="bnav-icon">🏆</div>
+        <div class="bnav-label">S30/SEZON</div>
+      </div>
+      <div class="bnav-item" onclick="switchTab('weapons')">
+        <div class="bnav-icon">🔧</div>
+        <div class="bnav-label">ATÖLYe</div>
+      </div>
+      <div class="bnav-item" onclick="switchTab('lb')">
+        <div class="bnav-icon">📊</div>
+        <div class="bnav-label">KARTLAR</div>
+      </div>
+      <div class="bnav-item" onclick="openPanel('envanter')">
+        <div class="bnav-icon">🎒</div>
+        <div class="bnav-label">ENVANTER</div>
+        <div class="bnav-chevron">∧</div>
+      </div>
+    </div>
+
+    <!-- BOTTOM STATS BAR -->
+    <div id="bottom-stats">
+      <div class="bs-item"><span class="bs-val" id="ls-wins">0</span><span class="bs-lbl">ZAFER</span></div>
+      <div class="bs-item"><span class="bs-val" id="ls-kills">0</span><span class="bs-lbl">ÖLDÜRME</span></div>
+      <div class="bs-item"><span class="bs-val" id="ls-best">0</span><span class="bs-lbl">EN İYİ SKOR</span></div>
+      <div class="bs-item"><span class="bs-val" id="ls-games">0</span><span class="bs-lbl">OYUN</span></div>
+      <div class="bs-item" style="margin-left:auto"><span style="font-size:9px;color:#666">Avrupa HD · 4.4.0</span></div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE-UP PANELS ── -->
+  <div id="slide-panel" class="hidden">
+    <div id="slide-panel-header">
+      <span id="slide-panel-title">PANEL</span>
+      <button onclick="closePanel()">✕</button>
+    </div>
+    <div id="slide-panel-body">
+
+      <!-- PLAY TAB -->
+      <div class="tab-panel active" id="tab-play">
+        <div class="sec-title">OYUN MODU</div>
+        <div id="mode-cards">
+          <div class="mode-card selected" onclick="selectMode('br',this)">
+            <div class="mc-icon">🪂</div><div class="mc-name">BATTLE ROYALE</div><div class="mc-desc">50 oyuncu · Son kişi kazanır</div>
+          </div>
+          <div class="mode-card" onclick="selectMode('ranked',this)">
+            <div class="mc-icon">🏆</div><div class="mc-name">RANKED</div><div class="mc-desc">1.5x XP bonus</div>
+          </div>
+          <div class="mode-card" onclick="selectMode('tdm',this)">
+            <div class="mc-icon">⚔</div><div class="mc-name">TAKIM ÖLÜM</div><div class="mc-desc">5v5 deathmatch</div>
+          </div>
+        </div>
+        <div class="sec-title">ZORLUK</div>
+        <div id="diff-row">
+          <div class="diff-btn" onclick="selectDiff('easy',this)">KOLAY</div>
+          <div class="diff-btn sel-normal" onclick="selectDiff('normal',this)">NORMAL</div>
+          <div class="diff-btn" onclick="selectDiff('hard',this)">ZOR</div>
+          <div class="diff-btn" onclick="selectDiff('extreme',this)">AŞIRI</div>
+        </div>
+      </div>
+
+      <!-- WEAPONS TAB -->
+      <div class="tab-panel" id="tab-weapons">
+        <div class="sec-title">SİLAH SEÇ</div>
+        <div id="weapon-grid">
+          <div class="weapon-card selected" onclick="selectWeapon('m4a1',this)"><div class="wc-icon">🔫</div><div class="wc-name">M4A1</div><div class="wc-type">ASSAULT RIFLE</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:55%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:80%"></div></div></div></div>
+          <div class="weapon-card" onclick="selectWeapon('ak47',this)"><div class="wc-icon">⚡</div><div class="wc-name">AK-47</div><div class="wc-type">ASSAULT RIFLE</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:72%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:65%"></div></div></div></div>
+          <div class="weapon-card" onclick="selectWeapon('sniper',this)"><div class="wc-icon">🎯</div><div class="wc-name">AWM</div><div class="wc-type">SNIPER</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:95%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:20%"></div></div></div></div>
+          <div class="weapon-card" onclick="selectWeapon('shotgun',this)"><div class="wc-icon">💥</div><div class="wc-name">SPAS-12</div><div class="wc-type">SHOTGUN</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:82%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:35%"></div></div></div></div>
+          <div class="weapon-card" onclick="selectWeapon('mp5',this)"><div class="wc-icon">🔧</div><div class="wc-name">MP5</div><div class="wc-type">SMG</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:38%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:92%"></div></div></div></div>
+          <div class="weapon-card" onclick="selectWeapon('m249',this)"><div class="wc-icon">🌀</div><div class="wc-name">M249</div><div class="wc-type">LMG</div><div class="stat-bar"><span>HASAR</span><div class="stat-track"><div class="stat-fill dmg" style="width:50%"></div></div></div><div class="stat-bar"><span>HIZ</span><div class="stat-track"><div class="stat-fill spd" style="width:75%"></div></div></div></div>
+        </div>
+      </div>
+
+      <!-- CHARS TAB -->
+      <div class="tab-panel" id="tab-chars">
+        <div class="sec-title">KARAKTER SEÇ</div>
+        <div id="char-grid">
+          <div class="char-card selected" onclick="selectChar('soldier',this,'🪖','ASKER')"><div class="char-avatar">🪖</div><div class="char-name">ASKER</div><div class="char-role">100 HP · Dengeli</div></div>
+          <div class="char-card" onclick="selectChar('ghost',this,'👻','GHOST')"><div class="char-avatar">👻</div><div class="char-name">GHOST</div><div class="char-role">80 HP · Hızlı</div></div>
+          <div class="char-card" onclick="selectChar('tank',this,'🦾','TANK')"><div class="char-avatar">🦾</div><div class="char-name">TANK</div><div class="char-role">140 HP · Güçlü</div></div>
+          <div class="char-card" onclick="selectChar('sniper',this,'🎯','KESKİN')"><div class="char-avatar">🎯</div><div class="char-name">KESKİN</div><div class="char-role">85 HP · Uzun Menzil</div></div>
+        </div>
+      </div>
+
+      <!-- RANK TAB -->
+      <div class="tab-panel" id="tab-rank">
+        <div id="rank-display"><div id="rank-icon-big">🥉</div><div id="rank-name-big">BRONZ</div>
+          <div id="rank-xp-bar-wrap"><div id="rank-xp-bar-bg"><div id="rank-xp-bar-fill"></div></div><div id="rank-xp-text">0 / 500 XP</div></div>
+        </div>
+        <div id="rank-list"></div>
+      </div>
+
+      <!-- SETTINGS TAB -->
+      <div class="tab-panel" id="tab-settings">
+        <div class="sec-title">OYUN AYARLARI</div>
+        <div class="setting-row"><div><div class="setting-label">🔊 SES</div></div><div class="toggle on" id="tog-sound" onclick="toggleSetting(this,'sound')"></div></div>
+        <div class="setting-row"><div><div class="setting-label">📳 TİTREŞİM</div></div><div class="toggle on" id="tog-vib" onclick="toggleSetting(this,'vib')"></div></div>
+        <div class="setting-row"><div><div class="setting-label">🔄 JİROSKOP</div></div><div class="toggle" id="tog-gyro" onclick="toggleSetting(this,'gyro')"></div></div>
+        <div class="setting-row"><div><div class="setting-label">🤖 OTOMATİK ATEŞ</div></div><div class="toggle" id="tog-auto" onclick="toggleSetting(this,'auto')"></div></div>
+        <div class="setting-row"><div><div class="setting-label">🖱 HASSASIYET</div></div><div class="slider-wrap"><input type="range" min="1" max="10" value="5" id="sl-sens" oninput="updateSens(this)"><div class="slider-val" id="sl-sens-val">5</div></div></div>
+        <div class="setting-row"><div><div class="setting-label">🖼 GRAFİK</div></div><div class="slider-wrap"><input type="range" min="1" max="3" value="2" id="sl-gfx" oninput="updateGfx(this)"><div class="slider-val" id="sl-gfx-val">ORTA</div></div></div>
+        <div class="setting-row"><div><div class="setting-label">⚡ FPS LİMİTİ</div></div><div class="slider-wrap"><input type="range" min="0" max="3" step="1" value="0" id="sl-fps" oninput="updateFpsLimit(this)"><div class="slider-val" id="sl-fps-val">SINIRSIZ</div></div></div>
+        <div class="setting-row"><div><div class="setting-label">👁 FOV</div></div><div class="slider-wrap"><input type="range" min="60" max="110" value="80" id="sl-fov" oninput="updateFov(this)"><div class="slider-val" id="sl-fov-val">80°</div></div></div>
+        <div class="setting-row"><div><div class="setting-label">🌿 ÇİM YOĞUNLUĞU</div></div><div class="slider-wrap"><input type="range" min="1" max="3" step="1" value="2" id="sl-foliage" oninput="updateFoliage(this)"><div class="slider-val" id="sl-foliage-val">ORTA</div></div></div>
+      </div>
+
+      <!-- LEADERBOARD TAB -->
+      <div class="tab-panel" id="tab-lb">
+        <div class="sec-title">GLOBAL LİDER TABLOSU</div>
+        <ul id="lb-list"><li style="color:#444;padding:16px;text-align:center">Yükleniyor...</li></ul>
+      </div>
+
+    </div><!-- /slide-panel-body -->
+  </div><!-- /slide-panel -->
+
+  <!-- Panel backdrop -->
+  <div id="panel-backdrop" class="hidden" onclick="closePanel()"></div>
+
+</div><!-- /lobby -->
+
+<!-- ══════════ PLANE UI ══════════ -->
+<div id="plane-ui" style="display:none">
+  <canvas id="plane-canvas"></canvas>
+  <div id="plane-overlay-content">
+    <h2>UÇAĞA BİNİLDİ</h2>
+    <p>ATLAMA NOKTASINI SEÇ</p>
+    <div id="plane-progress"><div id="plane-prog-fill"></div></div>
+    <div id="plane-altitude">YÜKSEKLİK: <span id="plane-alt-val">3500m</span></div>
+    <div id="plane-speed">HIZ: <span id="plane-speed-val">320 km/s</span></div>
+    <button id="btn-jump-plane" ontouchstart="jumpFromPlane()" onclick="jumpFromPlane()">🪂 ATLA!</button>
+    <div id="plane-direction">◀ KUZEY→GÜNEY · %<span id="plane-pct">0</span> GEÇİLDİ</div>
+  </div>
+</div>
+<div id="chute-hint" style="display:none">🪂 PARAŞÜT AÇIK · İNİŞ İÇİN BEKLE</div>
+
+<!-- ══════════ HUD ══════════ -->
+<div id="hud" style="display:none">
+  <div id="xhair"><div class="xhair-dot"></div></div>
+  <div id="dmg"></div><div id="hit">✖</div>
+  <div id="headshot-txt">KAFA İSABETİ!</div>
+  <div id="loot-popup"></div><div id="pickup-hint"></div>
+  <div id="top-hud">
+    <div id="alive-count">👥 <span id="s-alive">50</span>/50</div>
+    <div id="zone-timer">🔵 BÖLGE: <span id="s-zone-timer">90s</span></div>
+  </div>
+  <div id="zone-warning">⚠ BÖLGE DIŞINDASIN!</div>
+  <div id="stats">SKOR: <span id="s-score">0</span><br>ÖLDÜRME: <span id="s-kills">0</span><br>BÖLGE: <span id="s-zone-name">—</span></div>
+  <div id="fps-counter">60 FPS</div>
+  <div id="kfeed"></div>
+  <div id="minimap-wrap"><canvas id="minimap" width="130" height="130"></canvas><div id="mm-zone-name">—</div></div>
+  <div id="inv-bar">
+    <div class="inv-weapon-slot active" id="ws1" onclick="switchWeaponSlot(1)"><div class="ws-icon" id="ws1-icon">🔫</div><div class="ws-name" id="ws1-name">M4A1</div><div class="ws-ammo" id="ws1-ammo">30/120</div></div>
+    <div class="inv-weapon-slot empty" id="ws2" onclick="switchWeaponSlot(2)"><div class="ws-icon" id="ws2-icon">⬜</div><div class="ws-name" id="ws2-name">BOŞ</div><div class="ws-ammo" id="ws2-ammo">—</div></div>
+    <div class="inv-mid">
+      <div id="hp-wrap-br"><div id="hp-lbl-br"><span>❤ SAĞLIK</span><span id="hp-val">100</span></div><div id="hp-track-br"><div id="hp-fill-br"></div></div></div>
+      <div id="armor-wrap-br"><div id="armor-lbl"><span>🛡 ZIRH</span><span id="armor-val">0</span></div><div id="armor-track"><div id="armor-fill"></div></div></div>
+      <div id="inv-consumables"><div class="cons-item">💊 <span id="inv-medkits">0</span></div><div class="cons-item">⛑ <span id="inv-helmet">YOK</span></div><div id="reload-txt">⟳ ŞARJ</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="scope-overlay"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"><defs><mask id="scope-mask"><rect width="100" height="100" fill="white"/><circle cx="50" cy="50" r="22" fill="black"/></mask></defs><rect width="100" height="100" fill="rgba(0,0,0,0.9)" mask="url(#scope-mask)"/><circle cx="50" cy="50" r="22" fill="none" stroke="rgba(0,200,255,0.7)" stroke-width="0.5"/><line x1="28" y1="50" x2="44" y2="50" stroke="rgba(0,220,255,0.9)" stroke-width="0.3"/><line x1="56" y1="50" x2="72" y2="50" stroke="rgba(0,220,255,0.9)" stroke-width="0.3"/><line x1="50" y1="28" x2="50" y2="44" stroke="rgba(0,220,255,0.9)" stroke-width="0.3"/><line x1="50" y1="56" x2="50" y2="72" stroke="rgba(0,220,255,0.9)" stroke-width="0.3"/><circle cx="50" cy="50" r="0.6" fill="rgba(255,50,50,1)"/></svg></div>
+
+<div id="joy-zone" style="display:none"><div id="joy-base"></div><div id="joy-thumb"></div></div>
+<div id="look-zone" style="display:none"></div>
+<div id="btn-fire" style="display:none">🔥</div>
+<div id="btn-ads" style="display:none">🔭</div>
+<div id="btn-reload" style="display:none">⟳</div>
+<div id="btn-jump" style="display:none">↑</div>
+<div id="btn-loot" style="display:none">📦</div>
+<div id="btn-swap" style="display:none">🔄</div>
+<div id="btn-gyro" style="display:none">JİRO</div>
+
+<div id="win-screen" style="display:none"><h1>ZAFER!</h1><div id="win-stats"></div><button onclick="returnToLobby()" style="padding:14px 40px;font-size:14px;background:#cc0000;color:#fff;border:2px solid #ff3333;cursor:pointer;letter-spacing:4px;font-family:'Bebas Neue',monospace">LOBIYE DÖN</button></div>
+<div id="overlay" style="display:none"><h1>ELENDİN</h1><div id="ov-stats"></div><div id="rank-gained"></div><button id="go-btn" onclick="returnToLobby()">LOBIYE DÖN</button></div>
+
+<script src="firebase-config.js"></script>
+<script src="data.js"></script>
+<script src="lobby.js"></script>
+<script src="map.js"></script>
+<script src="player.js"></script>
+<script src="bots.js"></script>
+<script src="game.js"></script>
+<script>
+// Panel system
+function openPanel(id) {
+  const panel = document.getElementById('slide-panel');
+  const backdrop = document.getElementById('panel-backdrop');
+  // Map panel id to tab
+  const tabMap = { settings:'settings', klan:'lb', envanter:'weapons' };
+  if (tabMap[id]) {
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    const tp = document.getElementById('tab-'+tabMap[id]);
+    if(tp) tp.classList.add('active');
+    document.getElementById('slide-panel-title').textContent = id.toUpperCase();
+  }
+  panel.classList.remove('hidden');
+  backdrop.classList.remove('hidden');
+}
+function closePanel() {
+  document.getElementById('slide-panel').classList.add('hidden');
+  document.getElementById('panel-backdrop').classList.add('hidden');
+}
+
+// Bottom nav active
+document.querySelectorAll('.bnav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.bnav-item').forEach(i=>i.classList.remove('active-nav'));
+    item.classList.add('active-nav');
+    // Open slide panel for most tabs
+    const tab = item.getAttribute('data-tab');
+    if (!tab) return;
+    document.getElementById('slide-panel-title').textContent = item.querySelector('.bnav-label').textContent;
+    openPanel('_tab');
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    const tp = document.getElementById('tab-'+tab);
+    if(tp) tp.classList.add('active');
+  });
+});
+
+// Update XP bar in top bar
+function updateTopXpBar() {
+  const r = getRank(LD.xp), next = getNextRank(LD.xp);
+  if (!next) return;
+  const pct = ((LD.xp-r.xpReq)/(next.xpReq-r.xpReq)*100);
+  const fill = document.getElementById('tb-xp-fill');
+  if (fill) fill.style.width = pct+'%';
+  document.getElementById('sq-myname').textContent = LD.playerName;
+}
+// Call after data loads
+setTimeout(updateTopXpBar, 600);
+</script>
+</body>
+</html>
