@@ -837,9 +837,9 @@ function applySettingsToggles() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Game engine init (audio ctx, renderer setup etc.)
   if (typeof init === 'function') init();
-  if (LD.playerName && LD.playerName !== 'KOMUTAN') {
-    document.getElementById('name-modal').style.display = 'none';
-    openLobby();
-  }
+  // NOTE: Screen routing (auth-modal → name-modal → lobby)
+  // is handled entirely by firebase-config.js onAuthStateChanged.
+  // Do NOT open lobby or name-modal here.
 });

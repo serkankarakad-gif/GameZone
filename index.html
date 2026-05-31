@@ -7,6 +7,99 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Bebas+Neue&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>
+/* ── AUTH MODAL ── */
+#auth-modal {
+  position:fixed; inset:0; z-index:9999;
+  background:linear-gradient(135deg,#070a0e 0%,#0f161e 60%,#070a0e 100%);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Rajdhani',sans-serif;
+}
+#auth-box {
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,50,50,0.22);
+  border-radius:4px;
+  padding:36px 28px 28px;
+  width:92%; max-width:340px;
+  display:flex; flex-direction:column; align-items:center; gap:13px;
+  box-shadow:0 0 60px rgba(180,20,20,0.18),inset 0 0 40px rgba(0,0,0,0.35);
+}
+#auth-logo {
+  font-family:'Bebas Neue',monospace; font-size:46px;
+  color:#ff2222; letter-spacing:7px;
+  text-shadow:0 0 24px rgba(255,40,40,0.65); line-height:1;
+}
+#auth-sub-title {
+  font-size:10px; color:#666; letter-spacing:5px;
+  margin-top:-8px; margin-bottom:4px; text-transform:uppercase;
+}
+#auth-tabs {
+  display:flex; width:100%;
+  border:1px solid rgba(255,255,255,0.1); border-radius:2px; overflow:hidden;
+}
+.auth-tab {
+  flex:1; padding:9px 0;
+  background:transparent; border:none; outline:none;
+  color:#555; font-family:'Bebas Neue',monospace;
+  font-size:14px; letter-spacing:2px; cursor:pointer; transition:all .2s;
+}
+.auth-tab.active { background:#cc0000; color:#fff; }
+#auth-login-form, #auth-register-form {
+  width:100%; display:flex; flex-direction:column; gap:10px;
+}
+#auth-login-form input, #auth-register-form input {
+  width:100%; box-sizing:border-box;
+  padding:11px 13px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.11);
+  border-radius:2px;
+  color:#eee; font-family:'Rajdhani',sans-serif;
+  font-size:14px; letter-spacing:1px; outline:none;
+  transition:border-color .2s;
+}
+#auth-login-form input:focus, #auth-register-form input:focus {
+  border-color:rgba(255,55,55,0.55);
+  background:rgba(255,255,255,0.08);
+}
+#auth-login-form input::placeholder, #auth-register-form input::placeholder {
+  color:#444; letter-spacing:2px;
+}
+.auth-btn {
+  width:100%; padding:13px 0; margin-top:2px;
+  background:linear-gradient(135deg,#cc0000,#ff2222);
+  border:none; border-radius:2px; cursor:pointer;
+  color:#fff; font-family:'Bebas Neue',monospace;
+  font-size:17px; letter-spacing:4px;
+  transition:all .15s; outline:none;
+}
+.auth-btn:hover  { background:linear-gradient(135deg,#e60000,#ff4444); }
+.auth-btn:active { transform:scale(0.98); }
+.auth-btn:disabled { opacity:.45; cursor:not-allowed; }
+#auth-forgot {
+  font-size:11px; color:#777; letter-spacing:1px;
+  cursor:pointer; text-decoration:underline;
+  text-align:center; margin-top:-3px;
+}
+#auth-forgot:hover { color:#aaa; }
+#auth-error {
+  width:100%; box-sizing:border-box;
+  padding:8px 11px;
+  background:rgba(200,30,30,0.12);
+  border:1px solid rgba(200,30,30,0.3);
+  border-radius:2px;
+  color:#ff6666; font-size:12px;
+  letter-spacing:.4px; text-align:center;
+  display:none;
+}
+#auth-loading {
+  font-size:11px; color:#666; letter-spacing:4px;
+  display:none; text-transform:uppercase;
+}
+.auth-divider {
+  width:100%; height:1px;
+  background:rgba(255,255,255,0.07); margin:2px 0;
+}
+</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -14,8 +107,42 @@
 </head>
 <body>
 
+<!-- ══════════ AUTH MODAL ══════════ -->
+<div id="auth-modal" style="display:flex">
+  <div id="auth-box">
+    <div id="auth-logo">WAR ZONE</div>
+    <div id="auth-sub-title">BATTLE ROYALE v4</div>
+
+    <!-- Tabs -->
+    <div id="auth-tabs">
+      <button class="auth-tab active" id="tab-login-btn"    onclick="showAuthTab('login')">GİRİŞ YAP</button>
+      <button class="auth-tab"        id="tab-register-btn" onclick="showAuthTab('register')">KAYDOL</button>
+    </div>
+
+    <!-- Login form -->
+    <div id="auth-login-form" style="display:flex">
+      <input id="auth-email"    type="email"    placeholder="E-POSTA ADRESİ"  autocomplete="email">
+      <input id="auth-password" type="password" placeholder="ŞİFRE"           autocomplete="current-password">
+      <button id="auth-login-btn" class="auth-btn" onclick="doLogin()">GİRİŞ YAP</button>
+      <div id="auth-forgot" onclick="doForgotPassword()">Şifremi Unuttum</div>
+    </div>
+
+    <!-- Register form -->
+    <div id="auth-register-form" style="display:none">
+      <input id="auth-reg-name"     type="text"     placeholder="OYUNCU ADI (maks. 12)" maxlength="12" autocomplete="off">
+      <input id="auth-reg-email"    type="email"    placeholder="E-POSTA ADRESİ"        autocomplete="email">
+      <input id="auth-reg-password" type="password" placeholder="ŞİFRE (min. 6 karakter)" autocomplete="new-password">
+      <button id="auth-register-btn" class="auth-btn" onclick="doRegister()">KAYIT OL</button>
+    </div>
+
+    <div class="auth-divider"></div>
+    <div id="auth-error"></div>
+    <div id="auth-loading">YÜKLENİYOR...</div>
+  </div>
+</div>
+
 <!-- ══════════ NAME MODAL ══════════ -->
-<div id="name-modal">
+<div id="name-modal" style="display:none">
   <div id="name-modal-box">
     <div id="name-modal-logo">WAR ZONE</div>
     <div id="name-modal-sub">BATTLE ROYALE v4</div>
@@ -292,6 +419,10 @@
         <div class="setting-row"><div><div class="setting-label">⚡ FPS LİMİTİ</div></div><div class="slider-wrap"><input type="range" min="0" max="3" step="1" value="0" id="sl-fps" oninput="updateFpsLimit(this)"><div class="slider-val" id="sl-fps-val">SINIRSIZ</div></div></div>
         <div class="setting-row"><div><div class="setting-label">👁 FOV</div></div><div class="slider-wrap"><input type="range" min="60" max="110" value="80" id="sl-fov" oninput="updateFov(this)"><div class="slider-val" id="sl-fov-val">80°</div></div></div>
         <div class="setting-row"><div><div class="setting-label">🌿 ÇİM YOĞUNLUĞU</div></div><div class="slider-wrap"><input type="range" min="1" max="3" step="1" value="2" id="sl-foliage" oninput="updateFoliage(this)"><div class="slider-val" id="sl-foliage-val">ORTA</div></div></div>
+        <div class="setting-row" style="margin-top:18px;border-top:1px solid rgba(255,255,255,0.07);padding-top:14px">
+          <div style="font-size:11px;color:#555;letter-spacing:1px">Hesap işlemleri</div>
+          <button onclick="logoutUser()" style="padding:7px 18px;background:#550000;border:1px solid #cc2222;color:#ff6666;font-family:'Bebas Neue',monospace;font-size:13px;letter-spacing:3px;cursor:pointer;border-radius:2px">ÇIKIŞ YAP</button>
+        </div>
       </div>
 
       <!-- LEADERBOARD TAB -->
