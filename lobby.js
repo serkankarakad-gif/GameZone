@@ -20,7 +20,7 @@ let lobbyAnimating = false;
 
 // ── OPEN LOBBY ──
 function openLobby() {
-  document.getElementById('name-modal').style.display = 'none';
+  const _nm = document.getElementById('name-modal'); if(_nm) _nm.style.display = 'none';
   document.getElementById('lobby').style.display = 'block';
   document.getElementById('pnd-name').textContent  = LD.playerName;
 
@@ -712,11 +712,8 @@ function drawCloud(ctx, x, y, w, h, opacity) {
 //  LOBBY UI FUNCTIONS
 // ══════════════════════════════════════════════
 function confirmName() {
-  const n = (document.getElementById('name-input').value.trim().toUpperCase() || 'KOMUTAN').slice(0, 12);
-  LD.playerName = n;
-  saveData();
-  document.getElementById('name-modal').style.display = 'none';
-  openLobby();
+  // name-modal kaldırıldı — kayıt formundan isim alınıyor
+  if (typeof openLobby === 'function') openLobby();
 }
 
 function returnToLobby() {
@@ -837,9 +834,7 @@ function applySettingsToggles() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Game engine init (audio ctx, renderer setup etc.)
+  // Oyun motoru başlat (Three.js, ses vb.)
   if (typeof init === 'function') init();
-  // NOTE: Screen routing (auth-modal → name-modal → lobby)
-  // is handled entirely by firebase-config.js onAuthStateChanged.
-  // Do NOT open lobby or name-modal here.
+  // Ekran yönetimi (auth→lobby) firebase-config.js'de yapılıyor
 });

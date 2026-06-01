@@ -42,7 +42,7 @@ try {
   setTimeout(() => {
     loadDataLocal();
     _hideAuthModal();
-    _showNameModal();
+
   }, 150);
 }
 
@@ -50,8 +50,7 @@ try {
 function _showAuthModal() {
   const el = document.getElementById('auth-modal');
   if (el) el.style.display = 'flex';
-  const nm = document.getElementById('name-modal');
-  if (nm) nm.style.display = 'none';
+
   const lb = document.getElementById('lobby');
   if (lb) lb.style.display = 'none';
 }
@@ -59,10 +58,7 @@ function _hideAuthModal() {
   const el = document.getElementById('auth-modal');
   if (el) el.style.display = 'none';
 }
-function _showNameModal() {
-  const el = document.getElementById('name-modal');
-  if (el) el.style.display = 'flex';
-}
+// name-modal kaldırıldı
 
 function fbDB() {
   return _fbReady ? firebase.database() : null;
