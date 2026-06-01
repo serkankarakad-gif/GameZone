@@ -4,6 +4,14 @@
 
 let _fbReady = false;
 let currentUser = null;
+let _domReady = false;
+let _pendingAfterLoad = false;
+
+// DOM hazır olduğunda bekleyen lobby açılışını başlat
+document.addEventListener('DOMContentLoaded', () => {
+  _domReady = true;
+  if (_pendingAfterLoad) _afterLoad();
+});
 
 try {
   firebase.initializeApp({
@@ -211,18 +219,27 @@ function loadDataFromFirebase() {
 }
 
 function _afterLoad() {
-  // Kullanıcı giriş yapmışsa → HER ZAMAN direkt lobby
-  // (isim kayıt sırasında alındı, name-modal gösterme)
+  // DOM ve tüm JS dosyaları henüz yüklenmediyse bekle
+  if (!_domReady) {
+    _pendingAfterLoad = true;
+    return;
+  }
+  _pendingAfterLoad = false;
+
   if (currentUser) {
-    // Eğer isim yoksa email adresinden üret (yedek)
+    // İsim yoksa email'den üret
     if (!LD.playerName || LD.playerName === 'KOMUTAN') {
       const fallback = (currentUser.email || 'OYUNCU').split('@')[0].toUpperCase().slice(0, 12);
       LD.playerName = fallback;
       saveData();
     }
-    if (typeof openLobby === 'function') openLobby();
+    if (typeof openLobby === 'function') {
+      openLobby();
+    } else {
+      // openLobby yoksa 100ms sonra tekrar dene (script yükleniyor olabilir)
+      setTimeout(_afterLoad, 100);
+    }
   }
-  // currentUser yoksa zaten _showAuthModal() çalışmış olur, buraya gelmez
 }
 
 // ── localStorage yedek ──
