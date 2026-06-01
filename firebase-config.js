@@ -215,14 +215,18 @@ function loadDataFromFirebase() {
 }
 
 function _afterLoad() {
-  // Auth modal zaten kapalı (onAuthStateChanged kapattı)
-  // Sadece: isim varsa → lobby, yoksa → isim modal
-  if (LD.playerName && LD.playerName !== 'KOMUTAN') {
+  // Kullanıcı giriş yapmışsa → HER ZAMAN direkt lobby
+  // (isim kayıt sırasında alındı, name-modal gösterme)
+  if (currentUser) {
+    // Eğer isim yoksa email adresinden üret (yedek)
+    if (!LD.playerName || LD.playerName === 'KOMUTAN') {
+      const fallback = (currentUser.email || 'OYUNCU').split('@')[0].toUpperCase().slice(0, 12);
+      LD.playerName = fallback;
+      saveData();
+    }
     if (typeof openLobby === 'function') openLobby();
-    else _showNameModal();
-  } else {
-    _showNameModal();
   }
+  // currentUser yoksa zaten _showAuthModal() çalışmış olur, buraya gelmez
 }
 
 // ── localStorage yedek ──
