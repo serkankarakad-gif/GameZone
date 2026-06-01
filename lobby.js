@@ -21,7 +21,7 @@ let lobbyAnimating = false;
 // ── OPEN LOBBY ──
 function openLobby() {
   const _nm = document.getElementById('name-modal'); if(_nm) _nm.style.display = 'none';
-  document.getElementById('lobby').style.display = 'block';
+  document.getElementById('lobby').style.display = 'flex';
   document.getElementById('pnd-name').textContent  = LD.playerName;
 
   refreshLobbyStats();
@@ -624,7 +624,7 @@ function initLobbyBg3D() {
     ctx.fill();
 
     // Mini buildings on island
-    [[−20,10,10,28],[0,5,12,32],[18,8,9,26],[-38,18,6,18],[30,15,7,20]].forEach(([bx,bz,bw,bh]) => {
+    [[-20,10,10,28],[0,5,12,32],[18,8,9,26],[-38,18,6,18],[30,15,7,20]].forEach(([bx,bz,bw,bh]) => {
       ctx.fillStyle = `rgba(220,225,240,${0.7 + Math.random() * 0.0})`; // stable
       ctx.fillRect(bx - bw/2, 10 - bh, bw, bh);
       ctx.fillStyle = 'rgba(180,190,210,0.8)';
@@ -712,7 +712,7 @@ function drawCloud(ctx, x, y, w, h, opacity) {
 //  LOBBY UI FUNCTIONS
 // ══════════════════════════════════════════════
 function confirmName() {
-  // name-modal kaldırıldı — kayıt formundan isim alınıyor
+  // name-modal kaldırıldı
   if (typeof openLobby === 'function') openLobby();
 }
 
@@ -834,7 +834,6 @@ function applySettingsToggles() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Oyun motoru başlat (Three.js, ses vb.)
   if (typeof init === 'function') init();
-  // Ekran yönetimi (auth→lobby) firebase-config.js'de yapılıyor
+  // Ekran yönetimi firebase-config.js'de yapılıyor
 });
