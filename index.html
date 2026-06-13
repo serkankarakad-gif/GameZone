@@ -4771,7 +4771,16 @@ window.updateKrediNotu=window.updateKrediNotu||async function(uid,d){await db.re
   }
   window.renderTopbar = renderTopbar;
 
-  setTimeout(() => { if (!auth.currentUser) splash.classList.add('hidden'); }, 1500);
+  setTimeout(() => {
+    try {
+      if (!window.auth || !window.auth.currentUser) {
+        splash.classList.add('hidden');
+        if (typeof authScreen !== 'undefined' && authScreen) authScreen.classList.add('active');
+      }
+    } catch(e) {
+      splash.classList.add('hidden');
+    }
+  }, 3000);
 
   // Dışarı export edilen sabit
   window.GZ_STARTING_MONEY = STARTING_MONEY;
