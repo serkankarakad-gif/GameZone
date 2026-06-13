@@ -2881,6 +2881,24 @@ body.dark-mode .qs-foot { background: #0f172a; border-color: #334155; }
   <div class="spinner"></div>
   <div class="splash-text">GameZone yükleniyor...</div>
 </div>
+<script>
+(function(){
+  var LIMIT = 7000;
+  var t = setTimeout(function(){
+    var splash = document.getElementById('splash');
+    var auth   = document.getElementById('authScreen');
+    var game   = document.getElementById('gameScreen');
+    if (!splash) return;
+    var splashVisible = !splash.classList.contains('hidden') && splash.style.display !== 'none';
+    var gameActive = game && game.classList.contains('active');
+    if (splashVisible && !gameActive) {
+      splash.classList.add('hidden');
+      if (auth) { auth.classList.add('active'); auth.style.display = ''; }
+    }
+  }, LIMIT);
+  window._splashFailsafeTimer = t;
+})();
+</script>
 <div id="maintenanceScreen" class="screen maintenance-screen">
   <div class="maint-box">
     <div class="maint-emoji">🔧</div>
