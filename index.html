@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1e5cb8">
+<meta name="description" content="GameZone ERP — Ticaret İmparatorluğu">
+<title>GameZone ERP</title>
+<link rel="stylesheet" href="stil.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+</head>
+<body>
+<!-- =================== AUTH EKRANI =================== -->
+<div id="authScreen" class="screen active">
+  <div class="auth-container">
+    <div class="auth-logo" id="authLogoArea">
+      <span class="logo-text"><span class="logo-y">Game</span><span class="logo-w">Zone</span></span>
+      <div class="logo-sub">ERP — Ticaret İmparatorluğu</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Giriş</button>
+      <button class="auth-tab" data-tab="register">Standart</button>
+      <button class="auth-tab" data-tab="anon">🛡️ Anonim</button>
+      <button class="auth-tab founder-tab" data-tab="founder">⚡ Yetkili</button>
+    </div>
+    <!-- LOGIN -->
+    <div id="loginPanel" class="auth-panel active">
+      <input type="text" id="loginIdent" placeholder="Kullanıcı adı veya E-posta" autocomplete="username">
+      <input type="password" id="loginPass" placeholder="Şifre" autocomplete="current-password">
+      <button class="btn-primary" id="btnLogin">Giriş Yap</button>
+      <button class="btn-link" id="btnForgot">Şifremi Unuttum</button>
+    </div>
+    <!-- STANDART KAYIT -->
+    <div id="registerPanel" class="auth-panel">
+      <div class="privacy-pill standart">
+        <span class="pp-icon">📧</span>
+        <span class="pp-text">E-posta ile kayıt — şifre sıfırlama imkanı var.</span>
+      </div>
+      <input type="text" id="regUsername" placeholder="Kullanıcı Adı (3-16 karakter)" maxlength="16">
+      <input type="email" id="regEmail" placeholder="E-posta" autocomplete="email">
+      <input type="password" id="regPass" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+      <input type="password" id="regPass2" placeholder="Şifre (tekrar)" autocomplete="new-password">
+      <label class="auth-check">
+        <input type="checkbox" id="regAgree">
+        <span>Kuralları okudum ve kabul ediyorum. Hile, küfür, taciz halinde hesabım kalıcı olarak banlanır.</span>
+      </label>
+      <button class="btn-primary" id="btnRegister">Kayıt Ol</button>
+    </div>
+    <!-- ANONİM KAYIT -->
+    <div id="anonPanel" class="auth-panel">
+      <div class="privacy-pill anon">
+        <span class="pp-icon">🛡️</span>
+        <span class="pp-text"><b>E-posta toplamıyoruz.</b> Sadece kullanıcı adı + şifre. Şifrenizi unutursanız <b>kurtarma kodu</b> ile sıfırlayabilirsiniz.</span>
+      </div>
+      <input type="text" id="anonUsername" placeholder="Kullanıcı Adı (3-16 karakter)" maxlength="16">
+      <input type="password" id="anonPass" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+      <input type="password" id="anonPass2" placeholder="Şifre (tekrar)" autocomplete="new-password">
+      <label class="auth-check">
+        <input type="checkbox" id="anonAgree">
+        <span>Kuralları kabul ediyorum, hile-küfür-taciz halinde kalıcı banlanırım.</span>
+      </label>
+      <label class="auth-check">
+        <input type="checkbox" id="anonAccept">
+        <span>Kurtarma kodunu güvenli yere saklayacağımı, kaybedersem hesaba erişemeyeceğimi anladım.</span>
+      </label>
+      <button class="btn-primary" id="btnAnonRegister">🛡️ Anonim Kayıt Ol</button>
+    </div>
+    <!-- YETKİLİ GİRİŞ -->
+    <div id="founderPanel" class="auth-panel">
+      <div class="founder-banner">
+        <div class="fb-icon">⚡</div>
+        <h3>YETKİLİ GİRİŞİ</h3>
+        <p>Hesap bilgilerinle birlikte yetkili şifreni gir, tek seferde yetkili giriş yap!</p>
+      </div>
+      <div class="input-group">
+        <label>📧 E-posta veya Kullanıcı Adı</label>
+        <input type="text" id="founderEmail" placeholder="ornek@mail.com veya kullanıcıadı" autocomplete="username">
+      </div>
+      <div class="input-group">
+        <label>🔑 Hesap Şifren</label>
+        <input type="password" id="founderAccPass" placeholder="Normal hesap şifren" autocomplete="current-password">
+      </div>
+      <div class="input-group">
+        <label>⚡ Yetkili Şifresi</label>
+        <input type="password" id="founderPass" placeholder="Yetkili şifresi" autocomplete="off">
+      </div>
+      <button class="btn-primary btn-founder-login" id="btnFounderLogin">⚡ YETKİLİ OLARAK GİRİŞ YAP</button>
+      <div class="founder-info">
+        <div class="fi-row">⚠️ 3 hatalı deneme = 1 saat kilit</div>
+        <div class="fi-row">📝 Tüm denemeler kayıt altındadır</div>
+        <div class="fi-row">✨ Hesabın yoksa önce "Standart" sekmesinden kayıt ol</div>
+      </div>
+    </div>
+    <!-- VERIFY -->
+    <div id="verifyPanel" class="auth-panel">
+      <div class="verify-info">
+        <div class="verify-icon">📧</div>
+        <h3>E-postanı Doğrula</h3>
+        <p id="verifyEmailText">E-postana doğrulama bağlantısı gönderdik. Bağlantıya tıkla, sonra aşağıdaki butona bas.</p>
+      </div>
+      <button class="btn-primary" id="btnVerifyCheck">Doğruladım, Devam Et</button>
+      <button class="btn-link" id="btnVerifyResend">Tekrar Gönder</button>
+      <button class="btn-link" id="btnVerifyLogout">Çıkış Yap</button>
+    </div>
+    <!-- FORGOT -->
+    <div id="forgotPanel" class="auth-panel">
+      <h3 class="auth-title-small">Şifre Sıfırla</h3>
+      <div class="subtabs forgot-subtabs">
+        <button class="subtab active" data-fmode="email">📧 E-posta</button>
+        <button class="subtab" data-fmode="code">🔑 Kurtarma Kodu</button>
+      </div>
+      <div id="forgotByEmail" class="forgot-box">
+        <p class="auth-help">E-posta adresini gir, sıfırlama bağlantısı gönderelim.</p>
+        <input type="email" id="forgotEmail" placeholder="E-posta">
+        <button class="btn-primary" id="btnForgotSend">Bağlantı Gönder</button>
+      </div>
+      <div id="forgotByCode" class="forgot-box" style="display:none">
+        <p class="auth-help">Anonim hesaplar için: kullanıcı adı + 16 karakterlik kurtarma kodu.</p>
+        <input type="text" id="forgotUsername" placeholder="Kullanıcı Adı" maxlength="16">
+        <input type="text" id="forgotCode" placeholder="Kurtarma Kodu" maxlength="20" style="letter-spacing:2px">
+        <input type="password" id="forgotNewPass" placeholder="Yeni Şifre (en az 6 karakter)">
+        <button class="btn-primary" id="btnForgotCode">Şifreyi Sıfırla</button>
+      </div>
+      <button class="btn-link" id="btnForgotBack">← Giriş Ekranına Dön</button>
+    </div>
+    <div class="auth-footer">v2.0 • Geliştirici: Serkan Karakaş & Resul Karakaş</div>
+  </div>
+  <!-- Topbar yetkili modal -->
+  <div id="founderLoginPanel" class="founder-login-panel">
+    <div class="fl-card">
+      <div class="fl-header">
+        <div class="fl-icon">⚡</div>
+        <h2>YETKİLİ DOĞRULAMA</h2>
+        <div class="fl-sub">Yetkisiz erişim yasaktır. Tüm girişler kayıt altındadır.</div>
+      </div>
+      <div class="fl-body">
+        <div class="input-group">
+          <label>🔐 Yetkili Şifresi</label>
+          <input type="password" id="founderPassModal" placeholder="Şifre" autocomplete="off">
+        </div>
+        <button class="btn-founder" id="btnFounderLoginModal">⚡ YETKİLİ OLARAK GİR</button>
+        <button class="btn-link" id="btnFounderClose">← İptal</button>
+        <div class="fl-warning">⚠️ 3 başarısız denemeden sonra cihaz 1 saat banlanacaktır.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- =================== ANA OYUN =================== -->
+<div id="gameScreen" class="screen">
+  <header class="topbar">
+    <div class="topbar-row1">
+      <div class="brand">🎮<span style="color:#FFD700">Game</span><span style="color:#fff">Zone</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" onclick="window.toggleDarkMode?.()">🌗</button>
+        <button class="icon-btn" data-open="notif">🔔<span class="badge" id="notifBadge" hidden>0</span></button>
+        <button class="icon-btn" data-open="chat">💬<span class="badge" id="chatBadge" hidden>0</span></button>
+        <button class="icon-btn" onclick="render('banka')">🏦</button>
+        <button class="icon-btn" data-open="profile">👤</button>
+        <button class="icon-btn" id="founderTriggerBtn" style="display:none">⚡</button>
+      </div>
+    </div>
+    <div class="topbar-row2">
+      <span class="lvl-pill" id="lvlPill">Lv 1</span>
+      <span class="xp-bar"><span id="xpFill"></span></span>
+      <span class="xp-text" id="xpText">0/100</span>
+      <span class="dia">💎<b id="diaTxt">0</b></span>
+      <span class="cash">💰<b id="cashTxt">0₺</b></span>
+    </div>
+  </header>
+  <main id="appMain"></main>
+  <nav class="bottomnav" id="bottomNav" style="display:none">
+    <!-- SABİT 5 SEKME (her zaman görünür) -->
+    <button class="navbtn navbtn-fixed active" data-tab="dukkan">🏪<span>Dükkan</span></button>
+    <button class="navbtn navbtn-fixed" data-tab="bahce">🌱<span>Üretim</span></button>
+    <button class="navbtn navbtn-fixed navbtn-center" onclick="window._toggleBottomMenu(this)" title="Menü">☰<span>Menü</span></button>
+    <button class="navbtn navbtn-fixed" data-tab="banka">🏦<span>Banka</span></button>
+    <button class="navbtn navbtn-fixed" data-tab="liderlik">🏆<span>Liderlik</span></button>
+    <!-- KAYDIRILAB İLİR EKSTRA SEKMELER -->
+    <div class="bottomnav-scroll" id="bottomNavScroll">
+      <button class="navbtn" data-tab="ciftlik">🐄<span>Çiftlik</span></button>
+      <button class="navbtn" data-tab="fabrika">🏭<span>Fabrika</span></button>
+      <button class="navbtn" data-tab="maden">⛏️<span>Maden</span></button>
+      <button class="navbtn" data-tab="lojistik">🚚<span>Lojistik</span></button>
+      <button class="navbtn" data-tab="ihracat">🚢<span>İhracat</span></button>
+      <button class="navbtn" data-tab="ihale">⚖️<span>İhale</span></button>
+      <button class="navbtn" data-tab="kripto">📈<span>Kripto</span></button>
+      <button class="navbtn" data-tab="borsa">📊<span>Borsa</span></button>
+      <button class="navbtn" data-tab="marka">🏢<span>Marka</span></button>
+      <button class="navbtn" data-tab="oyunpazari">🏬<span>Oyuncu Pazar</span></button>
+      <button class="navbtn" data-tab="gorevler">📋<span>Görevler</span></button>
+      <button class="navbtn" data-tab="basarimlar">🏅<span>Başarımlar</span></button>
+      <button class="navbtn" data-tab="haberler">📰<span>Haberler</span></button>
+      <button class="navbtn" data-tab="sehirler">🏙️<span>Şehirler</span></button>
+      <button class="navbtn" data-tab="magaza">💎<span>Mağaza</span></button>
+      <button class="navbtn" data-tab="oyunlar">🎮<span>Oyunlar</span></button>
+      <button class="navbtn" data-tab="hikaye">📖<span>Hikaye</span></button>
+      <button class="navbtn" data-tab="sss">❓<span>SSS</span></button>
+      <button class="navbtn" data-tab="emlak">🏘️<span>Emlak</span></button>
+      <button class="navbtn" data-tab="sigorta">🛡️<span>Sigorta</span></button>
+      <button class="navbtn" data-tab="franchise">🪧<span>Franchise</span></button>
+      <button class="navbtn" data-tab="uluslararasi">🌍<span>Uluslararası</span></button>
+      <button class="navbtn" data-tab="karaborsa">🕶️<span>Karaborsa</span></button>
+    <button class="navbtn" data-tab="tahvil">📜<span>Tahvil</span></button>
+    <button class="navbtn" data-tab="futures">📉<span>Vadeli</span></button>
+    <button class="navbtn" data-tab="hedgefon">💹<span>Hedge Fon</span></button>
+    <button class="navbtn" data-tab="calisan">👷<span>Çalışan</span></button>
+    <button class="navbtn" data-tab="arge">🔬<span>Ar-Ge</span></button>
+    <button class="navbtn" data-tab="egitim">🎓<span>Eğitim</span></button>
+    <button class="navbtn" data-tab="sozlesme">📝<span>Sözleşme</span></button>
+    <button class="navbtn" data-tab="belediye">🏛️<span>Belediye</span></button>
+    <button class="navbtn" data-tab="ticsavas">⚔️<span>Tic. Savaş</span></button>
+    <button class="navbtn" data-tab="duello">🤜<span>Düello</span></button>
+    <button class="navbtn" data-tab="avatar">🎭<span>Avatar</span></button>
+    <button class="navbtn" data-tab="unvan">🎖️<span>Unvanlar</span></button>
+    <button class="navbtn" data-tab="dekorasyon">🎨<span>Dekorasyon</span></button>
+    <button class="navbtn" data-tab="sefer">🗺️<span>Sefer</span></button>
+    <button class="navbtn" data-tab="prestij">⭐<span>Prestij</span></button>
+    <button class="navbtn" data-tab="koleksiyon">🃏<span>Koleksiyon</span></button>
+    <button class="navbtn" data-tab="harita">🗺️<span>TR Harita</span></button>
+    <button class="navbtn" data-tab="muhtarlik">🏘️<span>Muhtarlık</span></button>
+    <button class="navbtn" data-tab="sgk">🏥<span>SGK</span></button>
+    <button class="navbtn" data-tab="vergidairesi">🏛️<span>Vergi Dairesi</span></button>
+    <button class="navbtn" data-tab="krediofisi">💳<span>Kredi Ofisi</span></button>
+    <button class="navbtn" data-tab="secim">🗳️<span>Seçim</span></button>
+    <button class="navbtn" data-tab="emniyet">👮<span>Emniyet</span></button>
+    <button class="navbtn" data-tab="askeriye">⚔️<span>Askeriye</span></button>
+    <button class="navbtn" data-tab="mahkeme">⚖️<span>Mahkeme</span></button>
+    <button class="navbtn" data-tab="noter">📋<span>Noterlik</span></button>
+    <button class="navbtn" data-tab="polis">🚔<span>Polis</span></button>
+    <button class="navbtn" data-tab="jandarma">🪖<span>Jandarma</span></button>
+    <button class="navbtn" data-tab="itfaiye">🚒<span>İtfaiye</span></button>
+    <button class="navbtn" data-tab="sahilguz">⛵<span>Sahil Güv.</span></button>
+    <button class="navbtn" data-tab="cuzdan">👛<span>Dijital Cüzdan</span></button>
+    <button class="navbtn" onclick="openPetShop()">🐾<span>Pet</span></button>
+    <button class="navbtn" onclick="openReferral()">🎁<span>Referans</span></button>
+    <button class="navbtn" onclick="openMoneyTransfer()">💸<span>Transfer</span></button>
+    <button class="navbtn" onclick="openTxHistory()">📜<span>Geçmiş</span></button>
+  </nav>
+</div>
+<!-- =================== KATMANLAR =================== -->
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+<div id="banScreen" class="screen ban-screen">
+  <div class="ban-box">
+    <div class="ban-emoji">🚫</div>
+    <h2>Hesabınız Askıya Alınmıştır</h2>
+    <p id="banReason">Topluluk kurallarını ihlal ettiğiniz için hesabınız kalıcı olarak banlanmıştır.</p>
+    <p id="banExpiry" style="color:#f59e0b;font-size:13px;margin-top:8px"></p>
+    <button class="btn-primary" id="btnBanLogout">Çıkış Yap</button>
+  </div>
+</div>
+<div id="splash" class="splash">
+  <div class="spinner"></div>
+  <div class="splash-text">GameZone yükleniyor...</div>
+</div>
+<div id="maintenanceScreen" class="screen maintenance-screen">
+  <div class="maint-box">
+    <div class="maint-emoji">🔧</div>
+    <h2>Bakım Modunda</h2>
+    <p id="maintReason">Sunucularımıza güncelleme yüklüyoruz.</p>
+    <div class="maint-loader"><div class="ml-bar"></div></div>
+    <div class="maint-eta" id="maintEta">Tahmini süre: kısa süre içinde</div>
+    <div class="maint-credits">— GameZone Ekibi</div>
+    <button id="maintBypassBtn" onclick="window._maintBypass&&window._maintBypass()" style="margin-top:32px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.25);padding:6px 16px;border-radius:8px;cursor:pointer;font-size:11px;letter-spacing:2px;">⚡</button>
+  </div>
+</div>
+<!-- ═══ YÖNETİCİ EKRANI ═══ -->
+<div id="adminScreen" style="display:none;position:fixed;inset:0;z-index:8000;flex-direction:column;background:#080d1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <!-- TOPBAR -->
+  <div style="height:56px;background:linear-gradient(135deg,#0d1424 0%,#141d30 100%);border-bottom:1px solid #1e3a5f;display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;box-shadow:0 2px 16px rgba(0,0,0,.6)">
+    <!-- Hamburger -->
+    <button id="adminHamburger" onclick="window._toggleAdminNav()" style="width:38px;height:38px;border-radius:8px;border:1px solid #1e3a5f;background:rgba(255,255,255,.06);color:#e2e8f0;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">☰</button>
+    <!-- Logo -->
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:20px">👑</span>
+      <div>
+        <div style="font-size:11px;font-weight:800;color:#f59e0b;letter-spacing:2px">YÖNETİCİ PANELİ</div>
+        <div id="adminTopbarUser" style="font-size:10px;color:#475569">—</div>
+      </div>
+    </div>
+    <!-- Canlı indikatör -->
+    <div style="display:flex;align-items:center;gap:5px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:999px;padding:3px 10px;margin-left:8px">
+      <span id="adminLiveDot" style="width:6px;height:6px;background:#22c55e;border-radius:50%;display:inline-block;animation:aDot 1.5s ease-in-out infinite"></span>
+      <span style="font-size:10px;color:#22c55e;font-weight:700">CANLI</span>
+    </div>
+    <!-- Sağ butonlar -->
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button onclick="window.AP&&window.AP.renderDashboard()" style="height:32px;padding:0 10px;border-radius:7px;border:1px solid #1e3a5f;background:rgba(255,255,255,.05);color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer">🔄 Yenile</button>
+      <button onclick="window.toggleDarkMode&&window.toggleDarkMode()" style="height:32px;width:32px;border-radius:7px;border:1px solid #1e3a5f;background:rgba(255,255,255,.05);color:#94a3b8;font-size:14px;cursor:pointer">🌗</button>
+      <button onclick="window.AP&&window.AP.adminLogout()" style="height:32px;padding:0 12px;border-radius:7px;border:1px solid #ef444466;background:rgba(239,68,68,.12);color:#ef4444;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">🚪 Çıkış</button>
+    </div>
+  </div>
+  <!-- BODY: NAV + MAIN -->
+  <div style="flex:1;display:flex;overflow:hidden;position:relative">
+    <!-- Sol Nav (kapatılabilir) -->
+    <nav id="adminScreenNav" style="width:220px;flex-shrink:0;background:#0b1120;border-right:1px solid #1a2f4a;overflow-y:auto;padding:8px 0;transition:width .25s,opacity .25s;box-shadow:2px 0 12px rgba(0,0,0,.3)">
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:#334155;padding:12px 14px 4px">GENEL</div>
+      <button class="asnb active" onclick="window.AP&&window.AP.navTo(this,'dashboard')"><span>📊</span><span>Dashboard</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'users')"><span>👥</span><span>Kullanıcılar</span></button>
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:#334155;padding:12px 14px 4px">EKONOMİ</div>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'economy')"><span>💰</span><span>Ekonomi Kontrol</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'krediOnay')" style="position:relative"><span>💳</span><span>Kredi Başvuruları</span><span id="krediOnayBadge" hidden style="position:absolute;right:10px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px">!</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'vergi')"><span>🏛️</span><span>Vergi &amp; Faiz</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'merkez')"><span>🏦</span><span>Merkez Bankası</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'borsa')"><span>📈</span><span>Borsa Kontrol</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'kripto')"><span>₿</span><span>Kripto Kontrol</span></button>
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:#334155;padding:12px 14px 4px">İÇERİK</div>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'news')"><span>📰</span><span>Haberler</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'chat')"><span>💬</span><span>Sohbet Yönetimi</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'games')"><span>🎮</span><span>Oyun Yönetimi</span></button>
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:#334155;padding:12px 14px 4px">SİSTEM</div>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'security')"><span>🛡️</span><span>Güvenlik</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'txlog')"><span>🔍</span><span>Şüpheli Hareketler</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'diamonds')"><span>💎</span><span>Elmas Satın Alanlar</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'events')"><span>⚡</span><span>Etkinlik Yönetimi</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'system')"><span>⚙️</span><span>Sistem Ayarları</span></button>
+      <button class="asnb" onclick="window.AP&&window.AP.navTo(this,'analytics')"><span>📈</span><span>Analitik</span></button>
+      <!-- Gizle butonu (altta) -->
+      <div style="height:1px;background:#1a2f4a;margin:12px 8px"></div>
+      <div style="padding:8px 14px;font-size:10px;color:#334155">v2.0 • Karakaş ERP</div>
+    </nav>
+    <!-- Overlay (mobil nav kapatmak için) -->
+    <div id="adminNavOverlay" onclick="window._toggleAdminNav(false)" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:1"></div>
+    <!-- Ana İçerik -->
+    <main style="flex:1;overflow-y:auto;background:#080d1a;position:relative;z-index:0">
+      <div id="adminScreenBody" style="min-height:100%"></div>
+    </main>
+  </div>
+</div>
+<style>
+  @keyframes aDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.4)}}
+  .asnb{width:100%;display:flex;align-items:center;gap:10px;padding:10px 14px;border:none;background:transparent;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:.15s;white-space:nowrap}
+  .asnb:hover{background:rgba(255,255,255,.04);color:#cbd5e1}
+  .asnb.active{background:rgba(59,130,246,.15);color:#60a5fa;border-right:3px solid #3b82f6}
+  .asnb span:first-child{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+  /* Admin nav gizli mod */
+  #adminScreenNav.collapsed{width:52px}
+  #adminScreenNav.collapsed .asnb span:not(:first-child),
+  #adminScreenNav.collapsed div[style*="letter-spacing"],
+  #adminScreenNav.collapsed div[style*="ERP"]{display:none}
+  #adminScreenNav.collapsed .asnb{justify-content:center;padding:10px 0}
+  /* Mobil */
+  @media(max-width:640px){
+    #adminScreenNav{position:absolute;top:0;bottom:0;left:0;z-index:2;transform:translateX(-100%);transition:transform .25s}
+    #adminScreenNav.open{transform:translateX(0)}
+    #adminNavOverlay.open{display:block!important}
+  }
+</style>
+<script>
+  window._adminNavOpen = true;
+  window._toggleAdminNav = function(force) {
+    const nav = document.getElementById('adminScreenNav');
+    const overlay = document.getElementById('adminNavOverlay');
+    if (!nav) return;
+    const isMobile = window.innerWidth <= 640;
+    if (isMobile) {
+      const isOpen = nav.classList.contains('open');
+      const newState = force !== undefined ? force : !isOpen;
+      nav.classList.toggle('open', newState);
+      overlay.classList.toggle('open', newState);
+    } else {
+      window._adminNavOpen = force !== undefined ? force : !window._adminNavOpen;
+      nav.classList.toggle('collapsed', !window._adminNavOpen);
+    }
+  };
+  // Menü butonu (☰ orta buton) açma/kapama
+  window._menuOpen = false;
+  window._toggleBottomMenu = function(btn) {
+    const scroll = document.getElementById('bottomNavScroll');
+    if (!scroll) return;
+    window._menuOpen = !window._menuOpen;
+    scroll.classList.toggle('open', window._menuOpen);
+    if (btn) btn.classList.toggle('active', window._menuOpen);
+  };
+  // Dışarıya tıklayınca kapat
+  document.addEventListener('click', function(e){
+    if (window._menuOpen && !e.target.closest('.bottomnav')) {
+      window._menuOpen = false;
+      const scroll = document.getElementById('bottomNavScroll');
+      if (scroll) scroll.classList.remove('open');
+      const centerBtn = document.querySelector('.navbtn-center');
+      if (centerBtn) centerBtn.classList.remove('active');
+    }
+  });
+</script>
+<div id="founderPanelRoot"></div>
+<div id="globalBroadcast" class="global-broadcast" style="display:none">
+  <div class="gb-icon">📢</div>
+  <div class="gb-text" id="gbText"></div>
+  <button class="gb-close" id="gbClose">✕</button>
+</div>
+<div id="weatherBar" class="weather-bar" style="display:none">
+  <span class="wb-season" id="wbSeason">🌸</span>
+  <span class="wb-weather" id="wbWeather">☀️ Güneşli</span>
+  <span class="wb-temp" id="wbTemp">22°C</span>
+  <span class="wb-effect" id="wbEffect"></span>
+</div>
+<!-- =================== SCRIPTLER =================== -->
+<!-- 3 JS dosyası — sıra kritik! -->
+<script src="firebase-init.js"></script>  <!-- 1. Firebase bağlantısı -->
+<script src="core.js"></script>           <!-- 2. Giriş + Ekonomi + UI -->
+<script src="modules.js"></script>        <!-- 3. Oyun motorları + Düzeltmeler -->
+<!-- siyasi-sistem.js KALDIRILDI -->
+
+<!-- =================== HABERLER SAYFASI =================== -->
+<div id="haberlerOverlay" style="display:none;position:fixed;inset:0;z-index:8000;background:#08090d;overflow-y:auto;">
+  <style>
+    #haberlerOverlay { font-family:'DM Sans',sans-serif; }
+    .hz-header { position:sticky;top:0;z-index:10;background:rgba(8,9,13,.9);backdrop-filter:blur(16px);border-bottom:1px solid #1d2233;padding:0 20px;height:60px;display:flex;align-items:center;justify-content:space-between; }
+    .hz-logo { font-size:16px;font-weight:800;color:#e8eaf0; }
+    .hz-close { background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);color:#6c63ff;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:600; }
+    .hz-live { display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.3);font-size:11px;font-weight:700;color:#ff6b6b; }
+    .hz-dot { width:6px;height:6px;border-radius:50%;background:#ff6b6b;animation:hzPulse 1.4s infinite; }
+    @keyframes hzPulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .hz-body { max-width:660px;margin:0 auto;padding:24px 16px 80px; }
+    .hz-stats { display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:22px; }
+    .hz-stat { background:#13161e;border:1px solid #1d2233;border-radius:12px;padding:12px;text-align:center; }
+    .hz-stat-n { font-size:20px;font-weight:800;background:linear-gradient(135deg,#6c63ff,#ff6b6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent; }
+    .hz-stat-l { font-size:11px;color:#5a6080;margin-top:3px; }
+    .hz-autobar { display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);font-size:12px;color:#10b981;margin-bottom:20px; }
+    .hz-spin { width:13px;height:13px;border:2px solid rgba(16,185,129,.3);border-top-color:#10b981;border-radius:50%;animation:hzSpin .8s linear infinite;flex-shrink:0; }
+    @keyframes hzSpin{to{transform:rotate(360deg)}}
+    .hz-featured { background:linear-gradient(135deg,rgba(108,99,255,.12),rgba(255,107,107,.08));border:1px solid rgba(108,99,255,.3);border-radius:14px;padding:18px;margin-bottom:18px; }
+    .hz-feat-lbl { display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:rgba(245,200,66,.12);color:#f5c842;font-size:10px;font-weight:700;letter-spacing:.4px;margin-bottom:10px; }
+    .hz-feat-title { font-size:19px;font-weight:800;color:#e8eaf0;line-height:1.3;margin-bottom:8px; }
+    .hz-feat-body { font-size:13px;color:#8892b0;line-height:1.6; }
+    .hz-card { background:#13161e;border:1px solid #1d2233;border-radius:14px;overflow:hidden;margin-bottom:16px;animation:hzFadeUp .4s ease both; }
+    @keyframes hzFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    .hz-card-head { display:flex;align-items:center;gap:10px;padding:12px 14px 8px; }
+    .hz-avatar { width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#6c63ff,#ff6b6b);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0; }
+    .hz-meta { flex:1; }
+    .hz-author { font-size:13px;font-weight:700;color:#e8eaf0;display:flex;align-items:center;gap:5px; }
+    .hz-time { font-size:10px;color:#5a6080;margin-top:1px; }
+    .hz-tag { padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.4px; }
+    .hz-tag-haber { background:rgba(108,99,255,.15);color:#6c63ff; }
+    .hz-tag-guncell { background:rgba(16,185,129,.12);color:#10b981; }
+    .hz-tag-ozel { background:rgba(245,200,66,.12);color:#f5c842; }
+    .hz-tag-etkinlik { background:rgba(255,107,107,.12);color:#ff6b6b; }
+    .hz-img { width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#0f1117; }
+    .hz-img-ph { width:100%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,#0f1117,#1d2233); }
+    .hz-card-body { padding:12px 14px; }
+    .hz-title { font-size:15px;font-weight:800;color:#e8eaf0;margin-bottom:6px;line-height:1.3; }
+    .hz-text { font-size:13px;color:#8892b0;line-height:1.6; }
+    .hz-card-foot { display:flex;align-items:center;padding:8px 14px 12px;border-top:1px solid #1d2233; }
+    .hz-action { display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;background:none;border:none;cursor:pointer;font-size:12px;color:#5a6080;transition:.2s; }
+    .hz-action:hover { background:rgba(255,255,255,.05);color:#e8eaf0; }
+    .hz-action.liked { color:#ff6b6b; }
+    .hz-spacer { flex:1; }
+    .hz-empty { text-align:center;padding:60px 20px;color:#5a6080; }
+    .hz-empty-icon { font-size:44px;margin-bottom:12px; }
+  </style>
+
+  <div class="hz-header">
+    <div class="hz-logo">📰 GameZone Haberler</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="hz-live"><div class="hz-dot"></div>CANLI</div>
+      <button class="hz-close" onclick="closeHaberler()">✕ Kapat</button>
+    </div>
+  </div>
+
+  <div class="hz-body">
+    <div class="hz-autobar">
+      <div class="hz-spin"></div>
+      <span id="hzAutoStatus">Haber motoru başlatılıyor...</span>
+    </div>
+    <div class="hz-stats">
+      <div class="hz-stat"><div class="hz-stat-n" id="hzStatPosts">–</div><div class="hz-stat-l">Haber</div></div>
+      <div class="hz-stat"><div class="hz-stat-n" id="hzStatLikes">–</div><div class="hz-stat-l">Beğeni</div></div>
+      <div class="hz-stat"><div class="hz-stat-n" id="hzStatToday">–</div><div class="hz-stat-l">Bugün</div></div>
+    </div>
+    <div id="hzFeatured"></div>
+    <div id="hzFeed"><div class="hz-empty"><div class="hz-empty-icon">⏳</div>Yükleniyor...</div></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  let hzPosts = [], hzLiked = JSON.parse(localStorage.getItem('gz_liked')||'[]');
+  let hzTimer = null, hzTopicIdx = 0, hzLoaded = false;
+
+  const HZ_TOPICS = [
+    {tag:'guncell', prompt:'GameZone oyununda yeni güncelleme haberi yaz. Konu: yeni ürün, fiyat dengesi, fabrika/çiftlik bonusu veya yeni reyon tipi.'},
+    {tag:'haber',   prompt:'GameZone ekonomi oyununda ekonomik gelişme haberi yaz. Konu: enflasyon, fiyat hareketleri, ihracat rekoru, pazar durumu.'},
+    {tag:'etkinlik',prompt:'GameZone oyununda etkinlik/turnuva duyurusu yaz. Ödüller, kurallar, katılım bilgisi ver. Heyecanlı ve davet edici.'},
+    {tag:'ozel',    prompt:'GameZone oyuncularına özel tüyo/strateji yaz. Elmas kazanma, en karlı ürün, reyon optimizasyonu gibi.'},
+    {tag:'haber',   prompt:'GameZone şehir hayatında ilginç olay haberi yaz: suç, belediye kararı, yeni bina, siyasi gelişme.'},
+    {tag:'guncell', prompt:'GameZone robot sistemi güncellemesi haberi: robot reyonları otomatik dolduruyor, yeni özellikler.'},
+    {tag:'etkinlik',prompt:'GameZone hafta sonu özel bonus etkinliği duyurusu: hangi ürünlerin satışı artıyor, fabrika bonusları.'},
+    {tag:'ozel',    prompt:'GameZone en başarılı oyuncular haberi. Para kazanma rekoru, başarı hikayeleri, motivasyonel.'},
+  ];
+
+  const TAG_META = {
+    haber:{cls:'hz-tag-haber',lbl:'📰 HABER'},
+    guncell:{cls:'hz-tag-guncell',lbl:'🔄 GÜNCELLEME'},
+    ozel:{cls:'hz-tag-ozel',lbl:'⭐ ÖZEL'},
+    etkinlik:{cls:'hz-tag-etkinlik',lbl:'🎉 ETKİNLİK'},
+  };
+
+  function timeAgo(ts){
+    const d=Date.now()-ts, m=Math.floor(d/60000);
+    if(m<1) return 'Az önce';
+    if(m<60) return m+' dk önce';
+    const h=Math.floor(m/60);
+    if(h<24) return h+' saat önce';
+    return Math.floor(h/24)+' gün önce';
+  }
+
+  function renderCard(p,i){
+    const tm=TAG_META[p.tag]||TAG_META.haber;
+    const liked=hzLiked.includes(p.id);
+    // Curated görsel — kategoriye göre sabit, stabil URL
+    const imgSrc = (p.imageUrl && !p.imageUrl.includes('source.unsplash.com'))
+      ? p.imageUrl
+      : (typeof window.GZ_getNewsImage === 'function'
+          ? window.GZ_getNewsImage(p.tag||'haber', p.id)
+          : `https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80`);
+    return `<div class="hz-card" style="animation-delay:${i*60}ms" id="hzp-${p.id}" data-tag="${p.tag||'haber'}">
+      <div class="hz-card-head">
+        <div class="hz-avatar">${p.emoji||'🎮'}</div>
+        <div class="hz-meta">
+          <div class="hz-author">GameZone <span style="color:#6c63ff;font-size:11px">✓</span></div>
+          <div class="hz-time">${timeAgo(p.ts)}</div>
+        </div>
+        <span class="hz-tag ${tm.cls}">${tm.lbl}</span>
+      </div>
+      <div class="hz-img-wrapper" style="overflow:hidden;position:relative">
+        <img class="hz-img" src="${imgSrc}" loading="lazy"
+             onerror="this.src='https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80'"/>
+        <div class="hz-img-overlay" style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.45) 0%,transparent 60%);pointer-events:none"></div>
+        <div class="hz-img-badge" style="position:absolute;bottom:10px;left:14px;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff">${tm.lbl}</div>
+      </div>
+      <div class="hz-card-body">
+        <div class="hz-title">${p.title}</div>
+        <div class="hz-text">${p.body}</div>
+      </div>
+      <div class="hz-card-foot">
+        <button class="hz-action ${liked?'liked':''}" onclick="hzLike('${p.id}');window.GZ_SOUND&&GZ_SOUND.play('click')">
+          ${liked?'❤️':'🤍'} <span id="hzlk-${p.id}">${p.likes||0}</span>
+        </button>
+        <div class="hz-spacer"></div>
+      </div>
+    </div>`;
+  }
+
+  function renderFeed(){
+    const el=document.getElementById('hzFeed');
+    if(!el) return;
+    if(!hzPosts.length){el.innerHTML='<div class="hz-empty"><div class="hz-empty-icon">📭</div>Henüz haber yok</div>';return;}
+    el.innerHTML=hzPosts.map((p,i)=>renderCard(p,i)).join('');
+    // Stats
+    document.getElementById('hzStatPosts').textContent=hzPosts.length;
+    const tl=hzPosts.reduce((s,p)=>s+(p.likes||0),0);
+    document.getElementById('hzStatLikes').textContent=tl>999?(tl/1000).toFixed(1)+'K':tl;
+    const tod=new Date(); tod.setHours(0,0,0,0);
+    document.getElementById('hzStatToday').textContent=hzPosts.filter(p=>p.ts>=tod.getTime()).length;
+    // Featured
+    const feat=hzPosts.find(p=>p.pinned)||hzPosts[0];
+    if(feat){
+      document.getElementById('hzFeatured').innerHTML=`<div class="hz-featured"><div class="hz-feat-lbl">📌 ÖNE ÇIKAN</div><div class="hz-feat-title">${feat.title}</div><div class="hz-feat-body">${feat.body.slice(0,200)}${feat.body.length>200?'...':''}</div></div>`;
+    }
+  }
+
+  window.hzLike=function(id){
+    const p=hzPosts.find(x=>x.id===id); if(!p) return;
+    const was=hzLiked.includes(id);
+    const nl=Math.max(0,(p.likes||0)+(was?-1:1));
+    if(typeof db!=='undefined') db.ref('news/posts/'+id+'/likes').set(nl);
+    p.likes=nl;
+    hzLiked=was?hzLiked.filter(x=>x!==id):[...hzLiked,id];
+    localStorage.setItem('gz_liked',JSON.stringify(hzLiked));
+    const btn=document.querySelector('#hzp-'+id+' .hz-action');
+    if(btn) btn.innerHTML=(was?'🤍':'❤️')+' <span id="hzlk-'+id+'">'+nl+'</span>';
+    if(was) btn&&btn.classList.remove('liked'); else btn&&btn.classList.add('liked');
+  };
+
+  async function hzPublish({title,body,tag,emoji,imageUrl}){
+    if(typeof db==='undefined') return;
+    const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    await db.ref('news/posts/'+id).set({title,body,tag,emoji:emoji||'📰',ts:Date.now(),likes:0,auto:true,imageUrl:imageUrl||null});
+  }
+
+  async function hzGenerate(){
+    const t=HZ_TOPICS[hzTopicIdx%HZ_TOPICS.length]; hzTopicIdx++;
+    const st=document.getElementById('hzAutoStatus');
+    if(st) st.textContent='AI haber oluşturuyor...';
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          messages:[{role:'user',content:t.prompt+'
+
+SADECE JSON yaz, başka hiçbir şey:
+{"emoji":"tek emoji","baslik":"max 80 karakter başlık","icerik":"2-3 cümle max 300 karakter","imageKeyword":"İngilizce Unsplash terimi max 3 kelime"}'}]
+        })
+      });
+      if(!res.ok) throw new Error(res.status);
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||'{}';
+      const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
+      if(!parsed.baslik||!parsed.icerik) throw new Error('invalid');
+      await hzPublish({title:parsed.baslik,body:parsed.icerik,tag:t.tag,emoji:parsed.emoji||'📰',imageUrl:typeof window.GZ_getNewsImage==='function'?window.GZ_getNewsImage(t.tag,Date.now().toString(36)):`https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80`});
+      if(st) st.textContent='✅ Haber yayınlandı! Sonraki: 15 dakika sonra';
+    }catch(e){
+      console.warn('[HzAuto]',e);
+      if(st) st.textContent='⚠️ Hata oluştu, 15 dk içinde tekrar denenecek';
+    }
+    hzTimer=setTimeout(hzGenerate,15*60*1000);
+  }
+
+  function hzLoadPosts(){
+    if(typeof db==='undefined') return;
+    db.ref('news/posts').orderByChild('ts').limitToLast(50).on('value',snap=>{
+      const val=snap.val()||{};
+      hzPosts=Object.entries(val).map(([id,p])=>({id,...p})).sort((a,b)=>b.ts-a.ts);
+      renderFeed();
+    });
+  }
+
+  window.openHaberler=function(){
+    document.getElementById('haberlerOverlay').style.display='block';
+    document.body.style.overflow='hidden';
+    if(!hzLoaded){
+      hzLoaded=true;
+      hzLoadPosts();
+      const last=hzPosts[0];
+      const should=!last||(Date.now()-last.ts)>=15*60*1000;
+      setTimeout(()=>{ if(should) hzGenerate(); else hzTimer=setTimeout(hzGenerate,15*60*1000-(Date.now()-hzPosts[0].ts)); },2000);
+    }
+  };
+
+  window.closeHaberler=function(){
+    document.getElementById('haberlerOverlay').style.display='none';
+    document.body.style.overflow='';
+  };
+})();
+</script>
+
+</body>
+</html>
