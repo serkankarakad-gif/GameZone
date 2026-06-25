@@ -1888,27 +1888,14 @@
     // 3) Konsol komutları
     if (!window.founderHelp) {
       window.founderHelp = function() {
-        console.log('%c⚡ YETKİLİ KOMUTLARI', 'background:#fbbf24;color:#000;padding:6px 12px;font-size:14px;font-weight:bold;border-radius:6px');
-        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━', 'color:#fbbf24');
-        console.log('%cwindow.giveMoney(1000000)', 'color:#16a34a', '— Kendine 1M para ver');
-        console.log('%cwindow.giveDiamonds(500)', 'color:#3b82f6', '— Kendine 500 elmas ver');
-        console.log('%cwindow.setLevel(50)', 'color:#a855f7', '— Seviyeyi 50 yap');
-        console.log('%cwindow.openFounderPanel()', 'color:#fbbf24', '— Yetkili kontrol panelini aç');
-        console.log('%cwindow.maintenanceOn("sebep")', 'color:#dc2626', '— Bakım moduna al');
-        console.log('%cwindow.maintenanceOff()', 'color:#16a34a', '— Bakımdan çıkar');
-        console.log('%cwindow.broadcast("mesaj", 30)', 'color:#0891b2', '— 30 dk duyuru yayınla');
-        console.log('%cwindow.broadcastClear()', 'color:#6b7280', '— Duyuruyu kapat');
-        console.log('%cwindow.notifyAll("mesaj")', 'color:#f59e0b', '— Tüm oyunculara bildirim');
-        console.log('%cwindow.banUser("uid")', 'color:#dc2626', '— Kullanıcıyı banla');
-        console.log('%cwindow.unbanUser("uid")', 'color:#16a34a', '— Ban kaldır');
-        console.log('%cwindow.giveMoneyTo("uid", 1000)', 'color:#16a34a', '— Hedefe para ver');
-        console.log('%cwindow.foundStats()', 'color:#3b82f6', '— Sistem istatistikleri');
+        // Komutlar gizli tutuldu
+        console.log('%c⚡ Yetkili panelini kullan', 'color:#fbbf24');
       };
     }
 
     // ── KISA YOL FONKSİYONLAR (Console için) ──
     window.giveMoney = async (amount) => {
-      if (!window.GZ_IS_FOUNDER) return console.warn('Yetki yok');
+      if (!window.GZ_IS_FOUNDER || !window.GZ?.data?.isFounder) return console.warn('❌ Yetki yok');
       const r = await addCash(GZ.uid, amount, 'founder_self');
       toast(`💰 +${amount.toLocaleString('tr-TR')} ₺`, 'success');
       return r;
@@ -13311,3 +13298,239 @@ window.pickCity = function(shopType) {
 
 })();
 
+
+/* ══════════════════════════════════════════════════════════════
+   GÜVENLİK & ANTI-CHEAT SİSTEMİ
+   ══════════════════════════════════════════════════════════════ */
+
+(function AntiCheat() {
+
+  // 1. Render fonksiyonlarını try-catch ile sar (sonsuz spinner önleme)
+  const renderKeys = Object.keys(window).filter(k => k.startsWith('render') && typeof window[k] === 'function');
+  renderKeys.forEach(key => {
+    const orig = window[key];
+    window[key] = async function(...args) {
+      try {
+        return await orig.apply(this, args);
+      } catch(e) {
+        console.warn(`[${key}] Hata:`, e?.message || e);
+        const main = document.getElementById('appMain');
+        if (main && main.innerHTML.includes('spinner')) {
+          main.innerHTML = `<div class="empty-state">
+            <span class="emoji">⚠️</span>
+            <h3>Sayfa yüklenemedi</h3>
+            <p style="font-size:12px;color:#64748b">${e?.message || 'Bir hata oluştu'}</p>
+            <button class="btn-primary" style="margin-top:12px" onclick="switchTab('dukkan')">🏪 Ana Sayfaya Dön</button>
+          </div>`;
+        }
+      }
+    };
+  });
+
+  // 2. addCash / spendCash koruması - sunucu doğrulaması
+  const _origAddCash = window.addCash;
+  window.addCash = async function(uid, amount, reason) {
+    // Tutar doğrulama
+    if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) return false;
+    if (amount > 999_000_000) { // 999M üstü tek seferde şüpheli
+      console.warn('[AntiCheat] Şüpheli addCash:', amount, reason);
+      if (window.GZ?.data?.isFounder !== true) return false;
+    }
+    return _origAddCash ? _origAddCash(uid, amount, reason) : false;
+  };
+
+  // 3. addXP koruması - sadece internal
+  const _origAddXP = window.addXP;
+  window.addXP = async function(uid, amount) {
+    amount = Math.floor(Math.abs(amount || 0));
+    if (!uid || amount <= 0 || amount > 50000) return; // Max 50k XP/çağrı
+    return _origAddXP ? _origAddXP(uid, amount) : null;
+  };
+
+  // 4. Para hilesi tespiti — bakiye aniden çok artarsa bildirim
+  let lastKnownMoney = 0;
+  setInterval(async () => {
+    if (!window.GZ?.uid || !window.db) return;
+    try {
+      const money = window.GZ?.data?.money || 0;
+      if (lastKnownMoney > 0 && money > lastKnownMoney * 5 && money - lastKnownMoney > 500000) {
+        // 5 dakikada bakiye 5 katına çıktı ve fark 500k+ ise şüpheli
+        console.warn('[AntiCheat] Şüpheli para artışı:', lastKnownMoney, '->', money);
+        await window.db.ref(`security/${window.GZ.uid}/suspicious`).push({
+          type: 'money_spike', from: lastKnownMoney, to: money, ts: Date.now()
+        }).catch(() => {});
+      }
+      lastKnownMoney = money;
+    } catch(e) {}
+  }, 5 * 60 * 1000); // 5 dakikada bir kontrol
+
+  // 5. Banlı kullanıcı kontrolü — her 10 dakikada bir
+  setInterval(async () => {
+    if (!window.GZ?.uid || !window.db) return;
+    try {
+      const banned = await window.db.ref(`users/${window.GZ.uid}/banned`).once('value').then(s => s.val());
+      if (banned === true) {
+        // Banlı kullanıcı tespit edildi
+        window.GZ.uid = null;
+        window.GZ.data = null;
+        document.getElementById('gameScreen')?.classList.remove('active');
+        document.getElementById('authScreen')?.classList.add('active');
+        alert('❌ Hesabınız yasaklanmıştır. Detaylar için destek ekibiyle iletişime geçin.');
+      }
+    } catch(e) {}
+  }, 10 * 60 * 1000);
+
+  console.log('[AntiCheat] ✅ Güvenlik sistemi aktif — render koruması, para doğrulama, ban kontrolü');
+})();
+
+
+/* ══════════════════════════════════════════════════════════════
+   GELİŞMİŞ ANTİ-CHEAT: İŞLETME BAZLI KAZANÇ TARAMASI
+   ══════════════════════════════════════════════════════════════ */
+
+(function AdvancedAntiCheat() {
+
+  // Seviyeye göre günlük MAX kazanç eşikleri (%50 toleranslı)
+  function getMaxDailyEarning(lv, shopCount, shopLevel) {
+    const TICK_PER_HOUR  = 20;          // 3dk tick
+    const basePrice      = 10 + lv * 0.5;
+    const maxDemand      = 1.4;         // ucuz fiyatta max talep
+    const reyonCount     = 3;           // ortalama reyon
+    const hourlyMax = TICK_PER_HOUR * maxDemand * shopLevel * reyonCount * shopCount * basePrice;
+    return hourlyMax * 24 * 1.5;        // 24 saat × %50 tolerans
+  }
+
+  // Oyuncunun işletmelerini analiz et
+  async function analyzePlayerEarnings(uid) {
+    try {
+      const [userData, shops, bank] = await Promise.all([
+        window.dbGet?.(`users/${uid}`).catch(()=>({})) || {},
+        window.dbGet?.(`businesses/${uid}/shops`).catch(()=>({})) || {},
+        window.dbGet?.(`bank/${uid}`).catch(()=>({})) || {},
+      ]);
+
+      const lv         = userData.level || 1;
+      const shopList   = Object.values(shops || {});
+      const shopCount  = shopList.length;
+      const avgShopLv  = shopCount > 0
+        ? shopList.reduce((s, sh) => s + (sh.level || 1), 0) / shopCount
+        : 1;
+
+      // Günlük kazanç takibi
+      const dailyEarning = userData.dailyEarning || 0;
+      const maxAllowed   = getMaxDailyEarning(lv, shopCount || 1, avgShopLv);
+
+      const ratio = dailyEarning / maxAllowed;
+
+      let suspicious = false;
+      let reason = '';
+
+      // Kural 1: Günlük kazanç limiti aşıldı mı?
+      if (ratio > 1.0 && dailyEarning > 10000) {
+        suspicious = true;
+        reason = `Günlük kazanç (${Math.round(dailyEarning).toLocaleString('tr-TR')}₺) maksimum sınırı (${Math.round(maxAllowed).toLocaleString('tr-TR')}₺) aştı. Oran: ${ratio.toFixed(1)}x`;
+      }
+
+      // Kural 2: Para aniden çok arttı mı? (son 1 saatte)
+      const moneyHistory = userData.moneyHistory || {};
+      const historyArr   = Object.values(moneyHistory).sort((a,b) => b.ts - a.ts);
+      if (historyArr.length >= 2) {
+        const latest  = historyArr[0].money || 0;
+        const hourAgo = historyArr.find(h => Date.now() - h.ts > 3600000)?.money || 0;
+        if (hourAgo > 0 && latest - hourAgo > maxAllowed / 24 * 3) {
+          suspicious = true;
+          reason = `1 saatte ${(latest - hourAgo).toLocaleString('tr-TR')}₺ artış — normal limitin 3 katı`;
+        }
+      }
+
+      // Kural 3: Dükkanı yokken çok para var mı?
+      if (shopCount === 0 && lv < 5 && (userData.money || 0) > 500000) {
+        suspicious = true;
+        reason = `Dükkan yok, Lv${lv}, ancak ${(userData.money||0).toLocaleString('tr-TR')}₺ para var`;
+      }
+
+      if (suspicious) {
+        // Şüpheli log yaz
+        await window.db?.ref(`security/${uid}/suspicious`).push({
+          type:   'earning_anomaly',
+          reason,
+          lv,
+          shopCount,
+          dailyEarning,
+          maxAllowed,
+          money: userData.money || 0,
+          ts: Date.now(),
+        }).catch(() => {});
+
+        // Uyarı sayısını artır
+        const warnRef  = window.db?.ref(`security/${uid}/warnCount`);
+        const warnSnap = await warnRef?.once('value').catch(() => null);
+        const warns    = (warnSnap?.val() || 0) + 1;
+        await warnRef?.set(warns).catch(() => {});
+
+        // 3 uyarı = otomatik ban (admin onayına gönder)
+        if (warns >= 3) {
+          await window.db?.ref(`users/${uid}/banned`).set(true).catch(() => {});
+          await window.db?.ref(`users/${uid}/banReason`).set(
+            `Otomatik ban: Hile şüphesi (${warns} uyarı). Sebep: ${reason}`
+          ).catch(() => {});
+          await window.db?.ref(`adminAlerts/autoBan_${uid}`).set({
+            uid, reason, warns, ts: Date.now(), money: userData.money
+          }).catch(() => {});
+          console.warn('[AntiCheat] Otomatik ban:', uid, reason);
+        }
+      }
+
+      return { suspicious, ratio, dailyEarning, maxAllowed };
+    } catch(e) {
+      console.warn('[AntiCheat] analyzePlayerEarnings hata:', e?.message);
+    }
+  }
+
+  // Para günlük birikimini takip et (addCash her çağrıldığında)
+  const _origAddCashAC = window.addCash;
+  window.addCash = async function(uid, amount, reason) {
+    const result = await (_origAddCashAC ? _origAddCashAC(uid, amount, reason) : false);
+    if (result && uid && amount > 0 && uid === window.GZ?.uid) {
+      // Günlük kazanç sayacını artır
+      const todayKey = new Date().toISOString().slice(0, 10); // 2025-01-15
+      window.db?.ref(`users/${uid}/dailyEarning`).transaction(c => (c || 0) + amount).catch(() => {});
+      // Gece yarısı sıfırlama için son güncelleme gününü kaydet
+      window.db?.ref(`users/${uid}/dailyEarningDate`).set(todayKey).catch(() => {});
+    }
+    return result;
+  };
+
+  // Günlük kazanç sıfırlama — her gece 00:00'da
+  function scheduleDailyReset() {
+    const now  = new Date();
+    const next = new Date(now);
+    next.setDate(next.getDate() + 1);
+    next.setHours(0, 0, 0, 0);
+    const msUntilMidnight = next - now;
+    setTimeout(async () => {
+      if (window.GZ?.uid) {
+        await window.db?.ref(`users/${window.GZ.uid}/dailyEarning`).set(0).catch(() => {});
+      }
+      scheduleDailyReset(); // Sonraki gün için tekrar planla
+    }, msUntilMidnight);
+  }
+  scheduleDailyReset();
+
+  // Her 30 dakikada bir tarama yap
+  setInterval(async () => {
+    if (!window.GZ?.uid) return;
+    const result = await analyzePlayerEarnings(window.GZ.uid);
+    if (result?.suspicious) {
+      console.warn('[AntiCheat] ⚠️ Şüpheli aktivite tespit edildi');
+    }
+  }, 30 * 60 * 1000);
+
+  // İlk giriş taraması (5 saniye sonra)
+  setTimeout(() => {
+    if (window.GZ?.uid) analyzePlayerEarnings(window.GZ.uid).catch(() => {});
+  }, 5000);
+
+  console.log('[AntiCheat] ✅ Gelişmiş kazanç taraması aktif — 30dk aralıklı, seviye bazlı eşik');
+
+})();

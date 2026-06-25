@@ -840,7 +840,7 @@
   async function cryptoGlobalChange(dir) {
     const pct=safeNum(document.getElementById('cryptoGlobalPct')?.value)/100*dir;
     if (!pct) return _toast('% gir','error');
-    const KRIPTO=window.KRIPTO||[]; const prices=await _get('crypto/prices')||{};
+    window.KRIPTO =window.KRIPTO||[]; const prices=await _get('crypto/prices')||{};
     const upd={};
     KRIPTO.forEach(k=>{
       const cur=prices[k.sym]?.current||k.base;
@@ -1026,7 +1026,7 @@
     const loglar = Object.values(logSnap.val()||{}).reverse();
     const el = document.getElementById('vergiContent'); if(!el) return;
 
-    const BANKALAR = ['ziraat','vakif','halk','is','garanti','akbank','ykb','qnb','deniz','teb'];
+    window.BANKALAR = ['ziraat','vakif','halk','is','garanti','akbank','ykb','qnb','deniz','teb'];
     const bankFaiz = bankFaizler||{};
 
     el.innerHTML = `
@@ -2542,7 +2542,7 @@
     const c = parseFloat(document.getElementById('globalCarpan')?.value);
     if (!c || c <= 0) return _toast('Çarpan gir', 'error');
     if (!confirm(`Tüm ürünlere ×${c} çarpanı uygulanacak!`)) return;
-    const URUNLER = window.URUNLER || {};
+    window.URUNLER = window.URUNLER || {};
     const mevcut  = await _get('system/urunFiyatCarpanlari') || {};
     const upd = {};
     Object.keys(URUNLER).forEach(k => {
@@ -18590,7 +18590,10 @@ window.renderKredi = async function() {
 
     ${Object.entries(BANKALAR).map(([key, b]) => {
       const locked    = lv < b.minLv || krediNotu < b.minNote;
-      const maxKredi  = haftalikGelir * b.maxCoef;
+      // Kredi limiti: haftalık gelir VEYA seviye bazlı minimum (hangisi büyükse)
+      const levelBase  = lv * lv * 500;          // Lv1=500, Lv10=50k, Lv20=200k, Lv50=1.25M
+      const gelirBase  = haftalikGelir * b.maxCoef;
+      const maxKredi   = Math.max(levelBase, gelirBase);
       const aylikFaiz = (b.faiz / 12 * 100).toFixed(2);
       const borc12    = Math.floor(maxKredi * (1 + b.faiz)).toLocaleString('tr-TR');
       return `
@@ -18696,3 +18699,179 @@ window.renderKredi = async function() {
 
 console.log('[duzeltmeler.js v4.0] ✅ Bölüm 36-39: Haberler + Kredi Ofisi + UI Yama aktif');
 
+
+/* ══════════════════════════════════════════════════════════
+   DÜZELTME PAKETİ — Şehir, Gece/Gündüz, Cüzdan, Banka
+   ══════════════════════════════════════════════════════════ */
+
+/* 1. Şehir Değiştirme */
+window.sehirDegistir = async function() {
+  const ILLER = window.ILLER_LIST || window.ILLER || ["Adana","Adıyaman","Afyonkarahisar","Ağrı","Amasya","Ankara","Antalya","Artvin","Aydın","Balıkesir","Bilecik","Bingöl","Bitlis","Bolu","Burdur","Bursa","Çanakkale","Çankırı","Çorum","Denizli","Diyarbakır","Edirne","Elazığ","Erzincan","Erzurum","Eskişehir","Gaziantep","Giresun","Gümüşhane","Hakkari","Hatay","Isparta","Mersin","İstanbul","İzmir","Kars","Kastamonu","Kayseri","Kırklareli","Kırşehir","Kocaeli","Konya","Kütahya","Malatya","Manisa","Kahramanmaraş","Mardin","Muğla","Muş","Nevşehir","Niğde","Ordu","Rize","Sakarya","Samsun","Siirt","Sinop","Sivas","Tekirdağ","Tokat","Trabzon","Tunceli","Şanlıurfa","Uşak","Van","Yozgat","Zonguldak","Aksaray","Bayburt","Karaman","Kırıkkale","Batman","Şırnak","Bartın","Ardahan","Iğdır","Yalova","Karabük","Kilis","Osmaniye","Düzce"];
+  const opts = ILLER.map(il => `<option value="${il}">${il}</option>`).join('');
+  window.showModal?.('📍 Şehir Değiştir', `
+    <div class="input-group">
+      <label>Yeni şehrin</label>
+      <select id="sehirSecim">${opts}</select>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-top:12px" onclick="
+      const il = document.getElementById('sehirSecim').value;
+      window.db?.ref('users/' + window.GZ?.uid + '/province').set(il).then(() => {
+        if (window.GZ?.data) window.GZ.data.province = il;
+        window.toast?.('📍 Şehir güncellendi: ' + il, 'success');
+        window.closeModal?.();
+        if (typeof renderCuzdan === 'function') renderCuzdan();
+      });
+    ">Kaydet</button>
+  `);
+};
+
+/* 2. Gece/Gündüz Modu */
+window.toggleDarkMode = function() {
+  const html    = document.documentElement;
+  const current = html.getAttribute('data-theme') || 'dark';
+  const next    = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  // Topbar ikonu güncelle
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = next === 'dark' ? '🌙' : '☀️';
+  window.toast?.(next === 'dark' ? '🌙 Gece modu' : '☀️ Gündüz modu', 'info');
+};
+
+// Sayfa açılışında kayıtlı temayı uygula
+(function applyTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+
+/* 3. Cüzdan - bakiye d.money kullan (d.bakiye değil) */
+const _origRenderCuzdan = window.renderCuzdan;
+window.renderCuzdan = async function() {
+  const main = document.getElementById('appMain');
+  if (!main) return;
+  const uid  = window.GZ?.uid;
+  if (!uid)  { main.innerHTML = window.emptyState?.('👛','Cüzdan','Giriş yap') || ''; return; }
+
+  const d    = await window.dbGet?.(`users/${uid}`).catch(()=>({})) || {};
+  const bank = await window.dbGet?.(`bank/${uid}`).catch(()=>({})) || {};
+  const lv   = d.level || 1;
+  const money = d.money || 0;    // ← d.bakiye değil d.money!
+  const borç  = bank.loan  || 0;
+  const savings = bank.savings || 0;
+  const cf   = window.cashFmt || (n => n.toLocaleString('tr-TR') + '₺');
+  const il   = d.province || 'İstanbul';
+
+  // Son transferler
+  const txList = await window.dbGet?.(`txHistory/${uid}`).catch(()=>({})) || {};
+  const txArr  = Object.values(txList).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,10);
+
+  main.innerHTML = `
+    <div class="page-title">💰 Dijital Cüzdan</div>
+
+    <!-- Ana Bakiye Kartı -->
+    <div style="background:linear-gradient(135deg,#0b1931,#1e3a6b);border:1px solid #3b82f644;border-radius:20px;padding:24px;margin-bottom:14px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;width:100px;height:100px;background:#3b82f611;border-radius:50%"></div>
+      <div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">ANA BAKİYE</div>
+      <div style="font-size:38px;font-weight:900;color:#22c55e;margin-bottom:4px">${cf(money)}</div>
+      <div style="font-size:12px;color:#64748b">${(d.username||'').toUpperCase()} · Lv ${lv} · ${il}</div>
+      <button onclick="window.sehirDegistir?.()" style="margin-top:12px;background:rgba(59,130,246,0.15);border:1px solid #3b82f644;border-radius:8px;padding:5px 12px;color:#93c5fd;font-size:11px;cursor:pointer">📍 Şehir Değiştir</button>
+    </div>
+
+    <!-- Hızlı Bakış -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px">💰 PARA</div>
+        <div style="font-weight:800;font-size:16px;color:#22c55e">${cf(money)}</div>
+      </div>
+      <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px">💳 BORÇ</div>
+        <div style="font-weight:800;font-size:16px;color:${borç>0?'#ef4444':'#22c55e'}">${cf(borç)}</div>
+      </div>
+      <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px">🏦 BİRİKİM</div>
+        <div style="font-weight:800;font-size:16px;color:#3b82f6">${cf(savings)}</div>
+      </div>
+      <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:14px;padding:14px;text-align:center">
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px">💎 ELMAS</div>
+        <div style="font-weight:800;font-size:16px;color:#818cf8">${(d.diamonds||0).toLocaleString('tr-TR')}</div>
+      </div>
+    </div>
+
+    <!-- Para Gönder -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-weight:700;margin-bottom:12px">💸 Para Gönder</div>
+      <div class="input-group">
+        <label>Alıcı UID</label>
+        <input type="text" id="cwTarget" placeholder="Oyuncu UID numarası">
+      </div>
+      <div class="input-group">
+        <label>Miktar</label>
+        <input type="number" id="cwAmount" placeholder="₺" min="1">
+      </div>
+      <button class="btn-primary" style="width:100%" onclick="window.cuzdanTransfer?.()">💸 Gönder</button>
+    </div>
+
+    <!-- Son İşlemler -->
+    ${txArr.length ? `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:12px">📜 Son İşlemler</div>
+      ${txArr.map(tx => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border,#1e3a5f)">
+          <div>
+            <div style="font-size:13px;font-weight:600">${tx.reason || tx.type || 'İşlem'}</div>
+            <div style="font-size:10px;color:#64748b">${tx.ts ? new Date(tx.ts).toLocaleString('tr-TR') : ''}</div>
+          </div>
+          <div style="font-weight:700;color:${(tx.amount||0)>0?'#22c55e':'#ef4444'};font-size:14px">
+            ${(tx.amount||0)>0?'+':''}${cf(tx.amount||0)}
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+  `;
+
+  // Transfer fonksiyonu
+  window.cuzdanTransfer = async function() {
+    const targetUid = document.getElementById('cwTarget')?.value?.trim();
+    const amount    = parseInt(document.getElementById('cwAmount')?.value) || 0;
+    if (!targetUid || !amount || amount < 1) return window.toast?.('Alıcı UID ve miktar gir', 'error');
+    if (amount > money) return window.toast?.('Yetersiz bakiye', 'error');
+    if (targetUid === uid) return window.toast?.('Kendine gönderemezsin', 'error');
+    const ok = await window.spendCash?.(uid, amount, 'transfer');
+    if (!ok) return window.toast?.('İşlem başarısız', 'error');
+    await window.db?.ref(`users/${targetUid}/money`).transaction(c => (c||0)+amount);
+    await window.dbPush?.(`txHistory/${uid}`, { reason:'Transfer gönderildi', amount:-amount, to:targetUid, ts:Date.now() });
+    await window.dbPush?.(`txHistory/${targetUid}`, { reason:'Transfer alındı', amount:+amount, from:uid, ts:Date.now() });
+    window.toast?.(`✅ ${cf(amount)} gönderildi`, 'success');
+    window.renderCuzdan?.();
+  };
+};
+
+/* 4. Bahçe - gerçekçi resim */
+window.getBahceResim = function(crop) {
+  const resimler = {
+    domates:   'https://images.unsplash.com/photo-1592841200221-a6898f307baa?w=300&q=80',
+    patates:   'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=300&q=80',
+    sogan:     'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=300&q=80',
+    elma:      'https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=300&q=80',
+    uzum:      'https://images.unsplash.com/photo-1537640538966-79f369143f8f?w=300&q=80',
+    findik:    'https://images.unsplash.com/photo-1508061253366-f7da158b6d46?w=300&q=80',
+    zeytin:    'https://images.unsplash.com/photo-1473649085228-583485e6e4d7?w=300&q=80',
+    default:   'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=300&q=80',
+  };
+  return resimler[crop] || resimler.default;
+};
+
+/* 5. Gece/Gündüz butonu topbar'a ekle */
+(function addThemeBtn() {
+  // Topbar'da 🌗 butonu zaten var ama id yok, id ekle
+  document.addEventListener('DOMContentLoaded', function() {
+    const btns = document.querySelectorAll('.icon-btn');
+    btns.forEach(btn => {
+      if (btn.textContent.includes('🌗') || btn.getAttribute('onclick')?.includes('toggleDarkMode')) {
+        btn.id = 'themeToggleBtn';
+        btn.textContent = localStorage.getItem('theme') === 'light' ? '☀️' : '🌙';
+      }
+    });
+  });
+})();
+
+console.log('[Düzeltme Paketi] ✅ Şehir, Cüzdan, Kredi, Gece/Gündüz aktif');

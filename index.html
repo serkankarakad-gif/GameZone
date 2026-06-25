@@ -6,13 +6,68 @@
 <meta name="theme-color" content="#1e5cb8">
 <meta name="description" content="GameZone ERP — Ticaret İmparatorluğu">
 <title>GameZone ERP</title>
+
+<!-- MASAÜSTÜ ENGELLEME — Firebase bile yüklenmeden önce çalışır -->
+<script>
+(function() {
+  var ua        = navigator.userAgent || '';
+  var platform  = navigator.platform  || '';
+  var maxTouch  = navigator.maxTouchPoints || 0;
+
+  // Mobil cihaz tespiti
+  var isMobile  = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  var isTablet  = /iPad|Tablet/i.test(ua) || (maxTouch > 1 && /Mac/.test(platform));
+  var hasTouch  = maxTouch > 0;
+  var isNarrow  = window.screen.width <= 1024;
+
+  // DevTools tespiti (F12 açıksa engelle)
+  var devtools  = false;
+  var threshold = 160;
+  if (window.outerWidth - window.innerWidth > threshold ||
+      window.outerHeight - window.innerHeight > threshold) {
+    devtools = true;
+  }
+
+  // Masaüstü mi?
+  var isDesktop = !isMobile && !isTablet && !hasTouch;
+
+  if (isDesktop || devtools) {
+    document.addEventListener('DOMContentLoaded', function() {
+      document.body.innerHTML = '';
+      document.body.style.cssText = 'margin:0;padding:0;background:#070c1a;height:100vh;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;';
+      document.body.innerHTML = '<div style="text-align:center;padding:40px;max-width:420px">' +
+        '<div style="font-size:72px;margin-bottom:24px">📱</div>' +
+        '<h1 style="color:#3b82f6;font-size:24px;margin-bottom:12px">Sadece Mobil</h1>' +
+        '<p style="color:#94a3b8;font-size:15px;line-height:1.7;margin-bottom:24px">' +
+        'GameZone yalnızca <b style="color:#e2e8f0">mobil cihazlar</b> için tasarlanmıştır.<br>' +
+        'Lütfen telefonundan giriş yap.' +
+        '</p>' +
+        '<div style="background:#0f1830;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-top:20px">' +
+        '<p style="color:#64748b;font-size:12px;margin:0">🔒 Bu uygulama masaüstü tarayıcılarda çalışmaz.</p>' +
+        '</div>' +
+        '</div>';
+    });
+
+    // Script yüklemesini de engelle
+    window.__DESKTOP_BLOCKED__ = true;
+  }
+})();
+</script>
+
 <link rel="stylesheet" href="stil.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Firebase SDK (compat) -->
+<script>
+// Masaüstü engellenmiş ise Firebase yüklenmesin
+if (!window.__DESKTOP_BLOCKED__) {
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+}
+</script>
 </head>
 <body>
 <!-- =================== AUTH EKRANI =================== -->
@@ -402,9 +457,11 @@
 </div>
 <!-- =================== SCRIPTLER =================== -->
 <!-- 3 JS dosyası — sıra kritik! -->
+<script>if (!window.__DESKTOP_BLOCKED__) {</script>
 <script src="firebase-init.js"></script>  <!-- 1. Firebase bağlantısı -->
 <script src="core.js"></script>           <!-- 2. Giriş + Ekonomi + UI -->
 <script src="modules.js"></script>        <!-- 3. Oyun motorları + Düzeltmeler -->
+<script>}</script>
 <!-- siyasi-sistem.js KALDIRILDI -->
 
 <!-- =================== HABERLER SAYFASI =================== -->
